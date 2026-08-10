@@ -271,17 +271,17 @@ Mechanical only, no logic changes.
 The core re-architecture. Riskiest phase; mitigations: DI router-by-router behind unchanged
 URLs, Phase 0 tests as the regression net.
 
-**Status: in progress on `feat/phase-2`.**
+**Status: complete on `main` (finish PR: lifespan + CLI collapse).**
 
 1. `create_app()` factory + lifespan; routers via `api/deps.py` (set_* removed). — **done**
-2. CLI: `serve` / `doctor` added; `config` deprecated alias; full collapse ongoing. — **partial**
+2. CLI: `spectrax.cli` — `serve` / `apikey` / `admin` / `reset` / `doctor` / `credentials`;
+   `config`/`start`/`quick` deprecated aliases; `run`/`detect` removed. — **done**
 3. pydantic-settings `SpectraXSettings`. — **done**
 4. `SecretsStore` (file/keyring/memory) + credentials facade. — **done**
 5. systemd units in `deploy/systemd/`. — **done**
-6. Package moves: `recording/`, `detection/`, `mediamtx/` seam; shims for old imports. — **done**
-7. Tests: config/secrets/app_factory + characterization/auth. — **done**
-8. Remaining: full lifespan owns MediaMTX child; delete fat `SurveillanceSystem`; hard-delete
-   `run`/`detect`; coverage ratchet.
+6. Package moves: `recording/`, `detection/`, `mediamtx/`; shims for old imports. — **done**
+7. Production lifespan owns MediaMTX child + detection/recording (`spectrax.runtime`). — **done**
+8. Fat `SurveillanceSystem` deleted; `surveillance.py` is a thin re-export of `cli`. — **done**
 
 *Ships: the headless-Linux-deployable core; macOS dev flow intact.*
 

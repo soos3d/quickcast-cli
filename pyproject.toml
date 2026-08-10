@@ -52,8 +52,8 @@ dev = [
 ]
 
 [project.scripts]
-spectrax = "spectrax.surveillance:app"
-surveillance = "spectrax.surveillance:app"
+spectrax = "spectrax.cli:app"
+surveillance = "spectrax.cli:app"
 
 [tool.setuptools.package-dir]
 "" = "src"

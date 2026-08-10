@@ -32,41 +32,48 @@ if command -v spectrax &> /dev/null; then
 elif command -v surveillance &> /dev/null; then
     CLI=(surveillance)
 else
-    CLI=(python3 -m spectrax.surveillance)
+    CLI=(python3 -m spectrax.cli)
 fi
 
 # Parse command line arguments
 case "$1" in
     quick)
-        echo "🚀 Quick start mode (1 camera, with detection)"
+        echo "🚀 Quick start mode (deprecated alias → serve)"
         cd "$PROJECT_ROOT"
         "${CLI[@]}" quick
         ;;
-    config)
-        echo "📋 Starting with configuration file..."
+    config|serve)
+        echo "📋 Starting SpectraX (serve)..."
         cd "$PROJECT_ROOT"
-        "${CLI[@]}" config
+        shift || true
+        "${CLI[@]}" serve --config "$PROJECT_ROOT/config/spectrax.yml" "$@"
+        ;;
+    doctor)
+        cd "$PROJECT_ROOT"
+        "${CLI[@]}" doctor
         ;;
     custom)
-        echo "⚙️  Custom mode - specify your options:"
+        echo "⚙️  Custom serve options:"
         shift
         cd "$PROJECT_ROOT"
-        "${CLI[@]}" start "$@"
+        "${CLI[@]}" serve "$@"
         ;;
     dashboard)
         echo "🌐 Opening surveillance dashboard..."
         open "$PROJECT_ROOT/dashboard/dashboard.html"
         ;;
     *)
-        echo "Usage: ./scripts/surveillance.sh [quick|config|custom|dashboard]"
+        echo "Usage: ./scripts/surveillance.sh [serve|config|quick|doctor|custom|dashboard]"
         echo ""
-        echo "  quick     - Quick start with 1 camera and object detection"
-        echo "  config    - Start using config/spectrax.yml"
-        echo "  custom    - Start with custom command line options"
-        echo "  dashboard - Open the standalone web dashboard (orphaned until Phase 4)"
+        echo "  serve     - Start SpectraX from config/spectrax.yml (preferred)"
+        echo "  config    - Alias for serve"
+        echo "  quick     - Deprecated quick start"
+        echo "  doctor    - Environment checks"
+        echo "  custom    - serve with extra flags"
+        echo "  dashboard - Standalone HTML (orphaned until Phase 4)"
         echo ""
-        echo "Default: Starting with configuration file..."
+        echo "Default: serve"
         cd "$PROJECT_ROOT"
-        "${CLI[@]}" config
+        "${CLI[@]}" serve --config "$PROJECT_ROOT/config/spectrax.yml"
         ;;
 esac

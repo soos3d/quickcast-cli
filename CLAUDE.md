@@ -38,14 +38,15 @@ Credentials are generated at runtime into the OS keychain (service
 From the repo root after editable install:
 
 ```bash
-./scripts/surveillance.sh config      # start from config/spectrax.yml
-./scripts/surveillance.sh quick       # one camera, defaults
-spectrax config                       # same as above via console script
-surveillance config                   # temporary alias (kept until Phase 2)
+./scripts/surveillance.sh serve       # start from config/spectrax.yml
+spectrax serve --config config/spectrax.yml
+spectrax doctor
+surveillance serve                    # temporary alias for spectrax
 ```
 
-The CLI is Typer (`src/spectrax/surveillance.py`): `config`, `start`, `quick`,
-`run`, `detect`, `reset`, `admin`, `apikey`, `credentials`.
+The CLI is Typer (`src/spectrax/cli.py`): `serve`, `doctor`, `reset`, `admin`,
+`apikey`, `credentials`. Deprecated aliases: `config`, `start`, `quick`.
+Removed: `run`, `detect`.
 
 ## Testing
 

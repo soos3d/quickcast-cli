@@ -1,8 +1,6 @@
 """Utility functions for video-feed."""
 
 import socket
-import shutil
-import subprocess
 import sys
 import typer
 from pathlib import Path
@@ -36,15 +34,13 @@ def resolve_model_path(model_name: str) -> str:
 
 def launch_mediamtx(cfg_path: Path) -> subprocess.Popen:
     """Launch the MediaMTX server with the given configuration."""
-    if not cfg_path.exists():
-        typer.secho(f"❌ Config file not found: {cfg_path}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+    from spectrax.mediamtx.process import MediaMTXError, launch
 
-    return subprocess.Popen(
-        [MEDIAMTX_BIN, str(cfg_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        return launch(Path(cfg_path))
+    except MediaMTXError as e:
+        typer.secho(f"❌ {e}", fg=typer.colors.RED)
+        raise typer.Exit(1) from e
 
 
 def detect_host_ip(prefer_iface: Optional[str] = None) -> str:
@@ -59,16 +55,13 @@ def detect_host_ip(prefer_iface: Optional[str] = None) -> str:
 
 def check_mediamtx_installed(binary_name: str = MEDIAMTX_BIN) -> None:
     """Check if mediamtx binary is available and exit if not."""
-    if shutil.which(binary_name) is None:
-        typer.secho(
-            f"Error: '{binary_name}' binary not found.",
-            fg=typer.colors.RED,
-            bold=True,
-        )
-        typer.echo(
-            "Please install MediaMTX from: https://github.com/bluenviron/mediamtx/releases"
-        )
-        raise typer.Exit(1)
+    from spectrax.mediamtx.process import MediaMTXError, check_installed
+
+    try:
+        check_installed(binary_name)
+    except MediaMTXError as e:
+        typer.secho(str(e), fg=typer.colors.RED, bold=True)
+        raise typer.Exit(1) from e
 
 
 def print_urls(
