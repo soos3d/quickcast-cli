@@ -202,14 +202,13 @@ def start(
         fg=typer.colors.YELLOW,
         err=True,
     )
-    from spectrax.config import SpectraXSettings
-
-    settings = SpectraXSettings(
-        cameras=paths or ["video/camera-1"],
-        network={"bind": bind},
-        detection={"port": detector_port, "enabled": not no_detector},
-    )
-    # Write ephemeral? Just call serve with defaults and host override
+    # Best-effort mapping; cameras from --path are ignored (use config file).
+    if paths:
+        typer.secho(
+            "Warning: --path is ignored on the start alias; set cameras in config/spectrax.yml",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
     serve(host=bind, port=detector_port, no_detection=no_detector)
 
 

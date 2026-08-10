@@ -295,10 +295,9 @@ URLs, Phase 0 tests as the regression net.
 *Ships: the first version modules can build against — freeze here.*
 
 ### Phase 4 — Docs & first module — 1 week
-1. Rewrite `docs/ARCHITECTURE.md` against the new reality; fix `README.md` (dead
-   `RECORDING_SETUP.md` link, auth setup, install flow, Python floor); regenerate
-   `docs/API.md` from OpenAPI with per-route auth requirements; verify
-   `CONFIGURATION_GUIDE.md`; update `routes/README.md` (or delete — DI makes it moot).
+1. ~~Rewrite core docs against Phase 0–2~~ — **done early (2026-08-10):** README,
+   ARCHITECTURE, API, CONFIGURATION_GUIDE, routes/README, models/README, deploy.
+   Remaining after Phase 3: regenerate API.md from frozen OpenAPI `/api/v1`.
 2. First real external module — e.g. a notifier consuming SSE — as the contract's
    proof-of-life, in its own repo.
 3. Dashboard incrementally rewritten to consume only `/api/v1`.
