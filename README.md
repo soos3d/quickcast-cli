@@ -165,16 +165,16 @@ Access the web interface at the URL shown when starting the system (e.g., `http:
 ./scripts/surveillance.sh quick
 
 # Start streaming server only (no detection)
-python -m videofeed.surveillance run --path video/front-door
+python -m spectrax.surveillance run --path video/front-door
 
 # Start detection only (existing stream)
-python -m videofeed.surveillance detect --rtsp-url "rtsps://viewer:pass@host:8322/video/cam"
+python -m spectrax.surveillance detect --rtsp-url "rtsps://viewer:pass@host:8322/video/cam"
 
 # Query recordings by tracker ID
 python scripts/query_recordings.py tracker 42
 
 # Reset stored credentials
-python -m videofeed.surveillance reset
+python -m spectrax.surveillance reset
 ```
 
 ### REST API

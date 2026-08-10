@@ -1,0 +1,110 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spectrax"
+version = "0.2.0"
+description = "Local surveillance core: MediaMTX streaming, YOLO detection, recording, and dashboard API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SpectraCoreX" }]
+# Core = CLI + API + auth (no torch). Detection/recording runtime needs the [cv] extra.
+dependencies = [
+    "typer==0.15.3",
+    "click==8.1.8",  # pin: click 8.2+ breaks typer 0.15 help (make_metavar)
+    "PyYAML==6.0.2",
+    "keyring==25.6.0",
+    "fastapi==0.115.12",
+    "uvicorn==0.34.2",
+    "Jinja2==3.1.6",
+    "starlette==0.46.2",
+    "itsdangerous==2.2.0",
+    "argon2-cffi==23.1.0",
+    "python-multipart==0.0.20",
+    "pydantic==2.11.4",
+    "Pillow==11.2.1",
+    "requests==2.32.3",
+    "tqdm==4.67.1",
+    "psutil==7.0.0",
+]
+
+[project.optional-dependencies]
+# Computer vision / detection stack (full runtime)
+cv = [
+    "opencv-python-headless==4.11.0.86",
+    "ultralytics==8.3.129",
+    "supervision==0.26.1",
+    "torch==2.7.0",
+    "torchvision==0.22.0",
+    "numpy==2.2.5",
+]
+# Alias used by CI docs: core + test tools, no torch
+web-test = []
+dev = [
+    "pytest==8.3.5",
+    "pytest-cov==6.1.1",
+    "pytest-asyncio==0.26.0",
+    "httpx==0.28.1",
+    "ruff==0.11.6",
+]
+
+[project.scripts]
+spectrax = "spectrax.surveillance:app"
+surveillance = "spectrax.surveillance:app"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spectrax = ["templates/*.html"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["venv", ".venv", "models"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "UP",
+    "B",
+    "C4",
+    "SIM",
+]
+ignore = [
+    "E501",
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-v", "--strict-markers", "--tb=short", "--disable-warnings"]
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "unit: Unit tests for individual components",
+    "integration: Integration tests for component interaction",
+    "db: Database-related tests",
+    "recording: Recording functionality tests",
+    "detection: Object detection tests",
+    "slow: Tests that take significant time to run",
+    "requires_mediamtx: Tests that require MediaMTX to be installed",
+    "api: API/route characterization and auth tests (no torch/MediaMTX)",
+]

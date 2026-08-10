@@ -19,7 +19,7 @@ This document provides a comprehensive overview of the SpectraX codebase archite
 ```
 root/
 ├── video-feed/                 # 📦 Main Python package
-│   ├── videofeed/              # Core modules
+│   ├── spectrax/              # Core modules
 │   │   ├── surveillance.py    # 🎯 MAIN ENTRY POINT - Unified CLI
 │   │   ├── config.py          # 🔧 Configuration management
 │   │   ├── detector.py        # 🎯 YOLO object detection
@@ -105,7 +105,7 @@ class SurveillanceConfig:
 
 **Usage:**
 ```python
-from videofeed.config import SurveillanceConfig
+from spectrax.config import SurveillanceConfig
 
 config = SurveillanceConfig.load_from_yaml('config/surveillance.yml')
 cameras = config.get_camera_paths()
@@ -588,7 +588,7 @@ pytest tests/
 
 ```bash
 # Start with config file
-python -m videofeed.surveillance config
+python -m spectrax.surveillance config
 
 # Or use the shell script
 ./scripts/surveillance.sh config
@@ -621,7 +621,7 @@ pytest
 pytest tests/test_detector.py
 
 # Run with coverage
-pytest --cov=videofeed tests/
+pytest --cov=spectrax tests/
 
 # Run with verbose output
 pytest -v
@@ -631,7 +631,7 @@ pytest -v
 
 ```python
 import pytest
-from videofeed.detector import ObjectDetector
+from spectrax.detector import ObjectDetector
 
 def test_detector_initialization():
     detector = ObjectDetector(model_path="yolov8n.pt", confidence=0.4)

@@ -26,41 +26,47 @@ elif [ -d "$PROJECT_ROOT/.venv" ]; then
     source "$PROJECT_ROOT/.venv/bin/activate"
 fi
 
-# Set Python path to include the video-feed directory
-export PYTHONPATH="$PROJECT_ROOT/video-feed:$PYTHONPATH"
+# Prefer the installed console script; fall back to python -m
+if command -v spectrax &> /dev/null; then
+    CLI=(spectrax)
+elif command -v surveillance &> /dev/null; then
+    CLI=(surveillance)
+else
+    CLI=(python3 -m spectrax.surveillance)
+fi
 
 # Parse command line arguments
 case "$1" in
     quick)
         echo "🚀 Quick start mode (1 camera, with detection)"
         cd "$PROJECT_ROOT"
-        python3 -m videofeed.surveillance quick
+        "${CLI[@]}" quick
         ;;
     config)
         echo "📋 Starting with configuration file..."
         cd "$PROJECT_ROOT"
-        python3 -m videofeed.surveillance config
+        "${CLI[@]}" config
         ;;
     custom)
         echo "⚙️  Custom mode - specify your options:"
         shift
         cd "$PROJECT_ROOT"
-        python3 -m videofeed.surveillance start "$@"
+        "${CLI[@]}" start "$@"
         ;;
     dashboard)
         echo "🌐 Opening surveillance dashboard..."
-        open "$PROJECT_ROOT/video-feed/ui/dashboard.html"
+        open "$PROJECT_ROOT/dashboard/dashboard.html"
         ;;
     *)
-        echo "Usage: ./surveillance.sh [quick|config|custom|dashboard]"
+        echo "Usage: ./scripts/surveillance.sh [quick|config|custom|dashboard]"
         echo ""
         echo "  quick     - Quick start with 1 camera and object detection"
-        echo "  config    - Start using surveillance.yml configuration"
+        echo "  config    - Start using config/spectrax.yml"
         echo "  custom    - Start with custom command line options"
-        echo "  dashboard - Open the web dashboard"
+        echo "  dashboard - Open the standalone web dashboard (orphaned until Phase 4)"
         echo ""
         echo "Default: Starting with configuration file..."
         cd "$PROJECT_ROOT"
-        python3 -m videofeed.surveillance config
+        "${CLI[@]}" config
         ;;
 esac

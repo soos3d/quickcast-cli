@@ -1,7 +1,7 @@
 # SpectraX Modernization & Re-architecture Plan
 
-> Status: **Phase 0 implemented on `feat/phase-0-security`** · Written 2026-08-09 ·
-> Phase 0 detail confirmed 2026-08-10 · Supersedes nothing (first plan doc)
+> Status: **Phase 0 on `main`** · **Phase 1 on `feat/phase-1-repackage` (merge pending)** ·
+> Written 2026-08-09 · Phase 0 confirmed 2026-08-10 · Phase 1 implemented 2026-08-10
 >
 > Sources: full-codebase survey, security audit, and architecture design produced 2026-08-09;
 > Phase 0 PR DAG refined by `plan-next-phase` workflow 2026-08-10.
@@ -201,7 +201,7 @@ spectrax/
 
 ### Phase 0 — Stop the bleeding (security, on the CURRENT layout) — 4–7 days
 
-**Status: implemented on branch `feat/phase-0-security` (merge pending).**
+**Status: merged to `main` (PR #9).**
 
 Fixes both CRITICALs and the HIGHs before any restructuring, so security never waits on
 architecture. Work stays on `video-feed/videofeed/` — **no** `create_app`, `src/spectrax/`,
@@ -252,13 +252,18 @@ Checklist (maps to original items):
 ### Phase 1 — Repackage — days
 Mechanical only, no logic changes.
 
-1. `pyproject.toml` (setuptools backend, `requires-python >= 3.11`, both console scripts);
-   delete `setup.py`, `cli.py` shim, and the `sys.path` hack.
-2. `git mv` to `src/spectrax/` layout; fix imports; ruff config moves into pyproject.
-3. Dependency refresh in tiers (web stack → CV stack → utilities), tests between tiers;
-   compiled lockfile (`uv pip compile`). **Re-verify `avc1` clip playback in-browser after
-   the OpenCV bump.**
-4. `@app.on_event` → lifespan context; clear pydantic v2 deprecation warnings.
+**Status: implemented on branch `feat/phase-1-repackage` (merge pending).**
+
+1. `pyproject.toml` (setuptools backend, `requires-python >= 3.11`, console scripts
+   `spectrax` + `surveillance` alias); delete `setup.py`, `cli.py` shim, and the
+   `sys.path` hack. Core deps exclude torch; full stack is `pip install -e ".[cv]"`. — **done**
+2. `git mv` to `src/spectrax/` layout; package rename `videofeed` → `spectrax`; path
+   helpers in `spectrax.paths`; ruff/pytest config in pyproject; config at
+   `config/spectrax.yml`; keychain service string kept as `video-feed-mediamtx`. — **done**
+3. Compiled lockfiles via `uv pip compile` (`requirements.lock.txt`,
+   `requirements-web-test.lock.txt`). Direct pin bumps (OpenCV/`avc1` gate) deferred to a
+   follow-up so this PR stays mechanical. — **done (structure); version bumps deferred**
+4. `@app.on_event` → lifespan context. — **done**
 
 *Ships: identical behavior, proper installable package, current deps.*
 
@@ -342,10 +347,10 @@ URLs, Phase 0 tests as the regression net.
 1. ~~**Dashboard TLS**~~ — **Decided (Phase 0):** plain HTTP on trusted LAN;
    `Secure=False` by default; `HttpOnly` + `SameSite=Strict` always. Self-signed dashboard
    HTTPS deferred.
-2. **Rename**: package becomes `spectrax` (from `videofeed`) in Phase 1 — confirm the name
-   before the `git mv`.
-3. **`.enc` extension** in the file-serving allowlist looks like an abandoned encryption
-   feature — confirm dead and remove in Phase 1.
+2. ~~**Rename**~~ — **Decided (Phase 1):** package is `spectrax`; console scripts
+   `spectrax` + temporary `surveillance` alias. Keychain service stays
+   `video-feed-mediamtx`.
+3. ~~**`.enc` extension**~~ — **Decided (Phase 1):** removed from files allowlist (dead).
 4. **MediaMTX ownership**: keep spawning it as a child of the core (simplest, current
    behavior) vs separate systemd unit on Linux (survives core restarts)? Plan assumes
    child-process in dev, separate unit in production — confirm in Phase 2.
