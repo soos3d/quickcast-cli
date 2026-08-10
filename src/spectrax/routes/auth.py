@@ -41,7 +41,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
     if not admin_hash:
         raise HTTPException(
             status_code=503,
-            detail="Admin password not configured. Run: surveillance admin set-password",
+            detail="Admin password not configured. Run: spectrax admin set-password",
         )
 
     if not creds_mod.verify_admin_password(body.password):

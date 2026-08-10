@@ -38,14 +38,15 @@ Credentials are generated at runtime into the OS keychain (service
 From the repo root after editable install:
 
 ```bash
-./scripts/surveillance.sh config      # start from config/spectrax.yml
-./scripts/surveillance.sh quick       # one camera, defaults
-spectrax config                       # same as above via console script
-surveillance config                   # temporary alias (kept until Phase 2)
+./scripts/surveillance.sh serve       # start from config/spectrax.yml
+spectrax serve --config config/spectrax.yml
+spectrax doctor
+surveillance serve                    # temporary alias for spectrax
 ```
 
-The CLI is Typer (`src/spectrax/surveillance.py`): `config`, `start`, `quick`,
-`run`, `detect`, `reset`, `admin`, `apikey`, `credentials`.
+The CLI is Typer (`src/spectrax/cli.py`): `serve`, `doctor`, `reset`, `admin`,
+`apikey`, `credentials`. Deprecated aliases: `config`, `start`, `quick`.
+Removed: `run`, `detect`.
 
 ## Testing
 
@@ -85,15 +86,12 @@ Never commit directly to `main`.
 ## Gotchas
 
 - **No `sys.path` / `PYTHONPATH` hacks** — use `pip install -e .`.
-- **Routes use module-level global state, not DI.** `visualizer.py` wires them at
-  startup via setters (`video_routes.set_detector_manager`,
-  `files_routes.set_recordings_directory`,
-  `recordings_routes.set_recordings_api`). Miss one and the route 500s. See
-  `src/spectrax/routes/README.md`. New endpoints belong in `routes/`, not
-  `visualizer.py`. (DI is Phase 2.)
+- **Routes use DI via `app.state` + `api/deps.py`.** Wire services in
+  `create_app` / production lifespan (`runtime.py`). New endpoints go in
+  `routes/` and take `Depends(get_*)`. See `src/spectrax/routes/README.md`.
 - **Two class filters that look alike**: `detection.filters.classes` controls
   what is *detected*, `recording.record_objects` controls what is *recorded*.
-  Empty list means "all" for both.
+  `null` or `[]` means "all" for both (settings normalize `[]` → `None`).
 - **`recording.codec` must be `avc1`** — `mp4v` produces clips the browser
   player cannot play. Re-verify playback after any OpenCV bump.
 - **RTSPS uses a self-signed cert** generated at runtime (`server.crt` /
@@ -101,6 +99,5 @@ Never commit directly to `main`.
   warnings. API auth is session cookie or bearer API key (Phase 0).
 - **Path helpers** for config/models/TLS live in `spectrax.paths` — do not
   reintroduce `Path(__file__).parent.parent / "config"`.
-- **Docs are known-stale — trust the code.** Full rewrite is Phase 4.
-  `docs/ARCHITECTURE.md` and some README paths still mention the old
-  `video-feed/` layout.
+- **Docs reflect Phase 0–2.** Phase 3 (`/api/v1`, SSE) is not shipped. When code
+  and docs disagree, trust the code and update docs in the same PR.

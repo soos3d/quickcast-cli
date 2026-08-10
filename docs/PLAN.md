@@ -271,17 +271,17 @@ Mechanical only, no logic changes.
 The core re-architecture. Riskiest phase; mitigations: DI router-by-router behind unchanged
 URLs, Phase 0 tests as the regression net.
 
-**Status: in progress on `feat/phase-2`.**
+**Status: complete on `main` (finish PR: lifespan + CLI collapse).**
 
 1. `create_app()` factory + lifespan; routers via `api/deps.py` (set_* removed). — **done**
-2. CLI: `serve` / `doctor` added; `config` deprecated alias; full collapse ongoing. — **partial**
+2. CLI: `spectrax.cli` — `serve` / `apikey` / `admin` / `reset` / `doctor` / `credentials`;
+   `config`/`start`/`quick` deprecated aliases; `run`/`detect` removed. — **done**
 3. pydantic-settings `SpectraXSettings`. — **done**
 4. `SecretsStore` (file/keyring/memory) + credentials facade. — **done**
 5. systemd units in `deploy/systemd/`. — **done**
-6. Package moves: `recording/`, `detection/`, `mediamtx/` seam; shims for old imports. — **done**
-7. Tests: config/secrets/app_factory + characterization/auth. — **done**
-8. Remaining: full lifespan owns MediaMTX child; delete fat `SurveillanceSystem`; hard-delete
-   `run`/`detect`; coverage ratchet.
+6. Package moves: `recording/`, `detection/`, `mediamtx/`; shims for old imports. — **done**
+7. Production lifespan owns MediaMTX child + detection/recording (`spectrax.runtime`). — **done**
+8. Fat `SurveillanceSystem` deleted; `surveillance.py` is a thin re-export of `cli`. — **done**
 
 *Ships: the headless-Linux-deployable core; macOS dev flow intact.*
 
@@ -295,10 +295,9 @@ URLs, Phase 0 tests as the regression net.
 *Ships: the first version modules can build against — freeze here.*
 
 ### Phase 4 — Docs & first module — 1 week
-1. Rewrite `docs/ARCHITECTURE.md` against the new reality; fix `README.md` (dead
-   `RECORDING_SETUP.md` link, auth setup, install flow, Python floor); regenerate
-   `docs/API.md` from OpenAPI with per-route auth requirements; verify
-   `CONFIGURATION_GUIDE.md`; update `routes/README.md` (or delete — DI makes it moot).
+1. ~~Rewrite core docs against Phase 0–2~~ — **done early (2026-08-10):** README,
+   ARCHITECTURE, API, CONFIGURATION_GUIDE, routes/README, models/README, deploy.
+   Remaining after Phase 3: regenerate API.md from frozen OpenAPI `/api/v1`.
 2. First real external module — e.g. a notifier consuming SSE — as the contract's
    proof-of-life, in its own repo.
 3. Dashboard incrementally rewritten to consume only `/api/v1`.

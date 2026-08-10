@@ -28,7 +28,16 @@ brew install mediamtx
 python3.12 -m venv venv && source venv/bin/activate
 pip install -e ".[cv,dev]"
 spectrax admin set-password
-spectrax config   # or: spectrax serve --config config/spectrax.yml
+spectrax doctor
+spectrax serve --config config/spectrax.yml
 ```
 
-Default secrets backend on macOS is the OS keychain (`video-feed-mediamtx`).
+Default secrets backend on macOS is the OS keychain (service name
+`video-feed-mediamtx` for compatibility).
+
+## Docs
+
+- [README](../README.md)
+- [Configuration](../docs/CONFIGURATION_GUIDE.md)
+- [API](../docs/API.md)
+- [Architecture](../docs/ARCHITECTURE.md)

@@ -115,53 +115,68 @@ class DetectorConfig:
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     
     @classmethod
-    def from_surveillance_config(cls, surveillance_config) -> 'DetectorConfig':
-        """Create DetectorConfig from SurveillanceConfig.
-        
-        Args:
-            surveillance_config: SurveillanceConfig instance
-            
-        Returns:
-            DetectorConfig instance
-        """
-        detection_config = surveillance_config.get_detection_config()
-        recording_config = surveillance_config.get_recording_config()
-        
-        # Get stream settings
-        stream_config = detection_config.get('stream', {})
-        
-        # Get filter settings
-        filter_config = detection_config.get('filters', {})
-        filter_classes = filter_config.get('classes', [])
-        # NOTE: Empty list means detect ALL objects
-        # Only use record_objects if explicitly set in filters.classes
-        # Do NOT use record_objects as fallback - that would limit detection
-        
-        # Get appearance settings
-        appearance_config = surveillance_config.config_data.get('appearance', {})
-        annotator_config = AnnotatorConfig.from_appearance_config(appearance_config)
-        
-        # Get tracking settings
-        tracking_config_dict = detection_config.get('tracking', {})
-        tracking_config = TrackingConfig(
-            enabled=tracking_config_dict.get('enabled', True),
-            track_thresh=tracking_config_dict.get('track_thresh', 0.25),
-            track_buffer=tracking_config_dict.get('track_buffer', 30),
-            match_thresh=tracking_config_dict.get('match_thresh', 0.8),
-            frame_rate=tracking_config_dict.get('frame_rate', 30)
+    def from_settings(cls, settings) -> "DetectorConfig":
+        """Create DetectorConfig from SpectraXSettings."""
+        det = settings.detection
+        appearance = settings.appearance.model_dump()
+        annotator_config = AnnotatorConfig.from_appearance_config(appearance)
+        tracking = TrackingConfig(
+            enabled=det.tracking.enabled,
+            track_thresh=det.tracking.track_thresh,
+            track_buffer=det.tracking.track_buffer,
+            match_thresh=det.tracking.match_thresh,
+            frame_rate=det.tracking.frame_rate,
         )
-        
+        # None = all classes (empty list for detector internals)
+        filter_classes = list(det.filters.classes) if det.filters.classes else []
         return cls(
-            model_path=detection_config.get('model', 'yolov8n.pt'),
-            confidence=detection_config.get('confidence', 0.4),
-            resolution=tuple(detection_config.get('resolution', {}).values()) or (960, 540),
-            buffer_size=stream_config.get('buffer_size', 10),
-            reconnect_interval=stream_config.get('reconnect_interval', 5),
+            model_path=det.model,
+            confidence=det.confidence,
+            resolution=(det.resolution.width, det.resolution.height),
+            buffer_size=det.stream.buffer_size,
+            reconnect_interval=det.stream.reconnect_interval,
             filter_classes=filter_classes,
-            min_detection_area=filter_config.get('min_area'),
-            max_detection_area=filter_config.get('max_area'),
+            min_detection_area=det.filters.min_area,
+            max_detection_area=det.filters.max_area,
             annotator=annotator_config,
-            tracking=tracking_config
+            tracking=tracking,
+        )
+
+    @classmethod
+    def from_surveillance_config(cls, surveillance_config) -> "DetectorConfig":
+        """Create DetectorConfig from SurveillanceConfig (legacy adapter)."""
+        if hasattr(surveillance_config, "settings"):
+            return cls.from_settings(surveillance_config.settings)
+        detection_config = surveillance_config.get_detection_config()
+        stream_config = detection_config.get("stream", {})
+        filter_config = detection_config.get("filters", {})
+        filter_classes = filter_config.get("classes") or []
+        appearance_config = surveillance_config.config_data.get("appearance", {})
+        annotator_config = AnnotatorConfig.from_appearance_config(appearance_config)
+        tracking_config_dict = detection_config.get("tracking", {})
+        tracking_config = TrackingConfig(
+            enabled=tracking_config_dict.get("enabled", True),
+            track_thresh=tracking_config_dict.get("track_thresh", 0.25),
+            track_buffer=tracking_config_dict.get("track_buffer", 30),
+            match_thresh=tracking_config_dict.get("match_thresh", 0.8),
+            frame_rate=tracking_config_dict.get("frame_rate", 30),
+        )
+        res = detection_config.get("resolution", {})
+        if isinstance(res, dict):
+            resolution = (res.get("width", 960), res.get("height", 540))
+        else:
+            resolution = (960, 540)
+        return cls(
+            model_path=detection_config.get("model", "yolov8n.pt"),
+            confidence=detection_config.get("confidence", 0.4),
+            resolution=resolution,
+            buffer_size=stream_config.get("buffer_size", 10),
+            reconnect_interval=stream_config.get("reconnect_interval", 5),
+            filter_classes=filter_classes if filter_classes else [],
+            min_detection_area=filter_config.get("min_area"),
+            max_detection_area=filter_config.get("max_area"),
+            annotator=annotator_config,
+            tracking=tracking_config,
         )
     
     def create_box_annotator(self) -> sv.BoxAnnotator:

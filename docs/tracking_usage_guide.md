@@ -2,6 +2,11 @@
 
 **How to use the tracking feature effectively**
 
+Tracking is configured under `detection.tracking` in `config/spectrax.yml` and
+implemented with [Roboflow supervision](https://github.com/roboflow/supervision)
+ByteTrack. Query stored tracker IDs via the authenticated recordings API or
+`scripts/query_recordings.py`.
+
 ---
 
 ## 🎯 What Tracking Gives You
