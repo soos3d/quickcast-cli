@@ -1,7 +1,7 @@
 # SpectraX Modernization & Re-architecture Plan
 
-> Status: **Phase 0 on `main`** · **Phase 1 on `feat/phase-1-repackage` (merge pending)** ·
-> Written 2026-08-09 · Phase 0 confirmed 2026-08-10 · Phase 1 implemented 2026-08-10
+> Status: **Phase 0–1 on `main`** · **Phase 2 in progress on `feat/phase-2`** ·
+> Written 2026-08-09 · Phase 1 merged 2026-08-10 · Phase 2 started 2026-08-10
 >
 > Sources: full-codebase survey, security audit, and architecture design produced 2026-08-09;
 > Phase 0 PR DAG refined by `plan-next-phase` workflow 2026-08-10.
@@ -271,20 +271,17 @@ Mechanical only, no logic changes.
 The core re-architecture. Riskiest phase; mitigations: DI router-by-router behind unchanged
 URLs, Phase 0 tests as the regression net.
 
-1. `create_app()` factory + lifespan owns startup (detector engine, MediaMTX child, DB);
-   routers take `Depends()` from `api/deps.py`; delete every `set_*` setter and `visualizer.py`
-   (logic splits into `app.py` + `detection/engine.py`).
-2. CLI collapses to `serve` / `apikey` / `admin` / `reset` / `doctor`.
-3. pydantic-settings config model (§3.5).
-4. `SecretsStore` protocol: `FileSecretsStore` (Linux default) + `KeyringSecretsStore` (macOS);
-   migration path from existing keychain entries.
-5. systemd unit files (replacing the stale `scripts/surveillance.service`); doc for launchd/dev
-   on macOS.
-6. **Refactor-and-move** (keep): `api.py`→`recording/db.py`, `recorder.py`, `detector.py`
-   internals, `routes/files.py`. **Rewrite** (encode old topology): `surveillance.py`,
-   `visualizer.py`, `config.py`, `credentials.py`.
-7. Route/config/credentials/detector-manager/CLI tests as each piece lands (TDD);
-   raise coverage ratchet toward 80%.
+**Status: in progress on `feat/phase-2`.**
+
+1. `create_app()` factory + lifespan; routers via `api/deps.py` (set_* removed). — **done**
+2. CLI: `serve` / `doctor` added; `config` deprecated alias; full collapse ongoing. — **partial**
+3. pydantic-settings `SpectraXSettings`. — **done**
+4. `SecretsStore` (file/keyring/memory) + credentials facade. — **done**
+5. systemd units in `deploy/systemd/`. — **done**
+6. Package moves: `recording/`, `detection/`, `mediamtx/` seam; shims for old imports. — **done**
+7. Tests: config/secrets/app_factory + characterization/auth. — **done**
+8. Remaining: full lifespan owns MediaMTX child; delete fat `SurveillanceSystem`; hard-delete
+   `run`/`detect`; coverage ratchet.
 
 *Ships: the headless-Linux-deployable core; macOS dev flow intact.*
 

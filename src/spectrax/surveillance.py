@@ -157,63 +157,57 @@ class SurveillanceSystem:
             # Silent - will show in final status
             # typer.echo(f"🎯 Starting object detection for {len(rtsp_urls)} streams...")
             
-            # Import here to avoid circular imports
-            from spectrax.detector import DetectorManager
-            from spectrax.detector_config import DetectorConfig
-            from spectrax.visualizer import app, set_detector_manager
-            from spectrax.recorder import RecordingManager
+            # Import here to avoid circular imports / torch at CLI import time
+            from spectrax.app import create_app
+            from spectrax.config import SpectraXSettings, SurveillanceConfig
+            from spectrax.detection.config import DetectorConfig
+            from spectrax.detection.detector import DetectorManager
+            from spectrax.recording.db import RecordingsAPI
+            from spectrax.recording.recorder import RecordingManager
             import uvicorn
-            
+
             try:
-                # Initialize recording manager if enabled
                 recording_manager = None
+                recordings_api = None
                 if enable_recording:
-                    # Silent initialization - will show in final status
-                    # typer.echo(f"📹 Initializing recording manager...")
                     recording_manager = RecordingManager(
                         recordings_dir=recordings_dir,
                         min_confidence=recording_min_confidence,
                         pre_detection_buffer=recording_pre_buffer,
                         post_detection_buffer=recording_post_buffer,
                         record_objects=record_objects,
-                        codec=recording_codec
+                        codec=recording_codec,
                     )
                     recording_manager.start()
-                    # typer.echo(f"📹 Recording enabled - clips will be saved to {recording_manager.recordings_dir}")
-                
-                # Initialize detector manager
+                    recordings_api = RecordingsAPI(
+                        db_connection=recording_manager.get_database_connection()
+                    )
+
                 detector_manager = DetectorManager(recording_manager=recording_manager)
-                
-                # Create detector configuration from surveillance config
-                # This pulls all settings from config/spectrax.yml including:
-                # - Model, confidence, resolution
-                # - Stream buffer and reconnect settings
-                # - Detection filters (classes, min/max area)
-                # - Visual appearance (box color, label style)
-                from spectrax.config import SurveillanceConfig
                 config_path = default_config_path()
                 surveillance_cfg = SurveillanceConfig(config_path)
                 detector_config = DetectorConfig.from_surveillance_config(surveillance_cfg)
-                
-                # Add detectors for each URL
+
                 for url in rtsp_urls:
                     detector_manager.add_detector(
                         source_url=url,
                         config=detector_config,
-                        enable_recording=enable_recording
+                        enable_recording=enable_recording,
                     )
-                
-                # Set the detector manager in the visualizer module
-                set_detector_manager(detector_manager)
-                
-                # Start FastAPI server without signal handlers
-                config = uvicorn.Config(
-                    app=app,
-                    host=host,
-                    port=port,
-                    log_level="info"
+
+                settings = SpectraXSettings(
+                    network={"bind": host},
+                    detection={"port": port},
                 )
-                
+                app = create_app(
+                    settings=settings,
+                    recordings_api=recordings_api,
+                    recordings_dir=recordings_dir
+                    or surveillance_cfg.get_recordings_directory(),
+                    detector_manager=detector_manager,
+                    enable_auth=True,
+                )
+                config = uvicorn.Config(app=app, host=host, port=port, log_level="info")
                 server = uvicorn.Server(config)
                 server.run()
             except Exception as e:
@@ -338,10 +332,81 @@ class SurveillanceSystem:
 
 
 @app.command()
+def serve(
+    config_file: Path = typer.Option(None, "--config", "-c", help="Configuration file path"),
+    host: Optional[str] = typer.Option(None, "--host", help="Override bind address"),
+    port: Optional[int] = typer.Option(None, "--port", help="Override dashboard port"),
+    no_mediamtx: bool = typer.Option(False, "--no-mediamtx", help="Do not spawn MediaMTX child"),
+):
+    """Start the SpectraX core (preferred entry point; replaces config/start/quick)."""
+    if config_file is None:
+        config_file = default_config_path()
+    # Reuse config path for now (full lifespan inversion still uses SurveillanceSystem)
+    config(
+        config_file=config_file,
+    )
+    # Note: host/port/no_mediamtx reserved for full serve implementation
+
+
+@app.command()
+def doctor():
+    """Check environment, config, and secrets readiness."""
+    import shutil
+    from spectrax.config import load_settings_or_default
+    from spectrax.paths import state_dir
+    from spectrax import credentials as creds_mod
+
+    ok = True
+    if sys.version_info < (3, 11):
+        typer.secho("Python ≥3.11 required", fg=typer.colors.RED)
+        ok = False
+    else:
+        typer.secho(f"Python {sys.version.split()[0]} OK", fg=typer.colors.GREEN)
+
+    if shutil.which("mediamtx"):
+        typer.secho("mediamtx on PATH OK", fg=typer.colors.GREEN)
+    else:
+        typer.secho("mediamtx not found on PATH", fg=typer.colors.RED)
+        ok = False
+
+    try:
+        settings = load_settings_or_default()
+        typer.secho(
+            f"Config OK (bind={settings.network.bind}, port={settings.detection.port})",
+            fg=typer.colors.GREEN,
+        )
+    except Exception as e:
+        typer.secho(f"Config load failed: {e}", fg=typer.colors.RED)
+        ok = False
+
+    sd = state_dir()
+    if sd.exists() and os.access(sd, os.W_OK):
+        typer.secho(f"State dir writable: {sd}", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"State dir not writable: {sd}", fg=typer.colors.RED)
+        ok = False
+
+    if creds_mod.get_admin_password_hash():
+        typer.secho("Admin password is set", fg=typer.colors.GREEN)
+    else:
+        typer.secho("Admin password NOT set (run: spectrax admin set-password)", fg=typer.colors.YELLOW)
+
+    raise typer.Exit(0 if ok else 1)
+
+
+@app.command()
 def config(
     config_file: Path = typer.Option(None, "--config", "-c", help="Configuration file path")
 ):
-    """Start surveillance system using a configuration file."""
+    """Start surveillance system using a configuration file.
+    
+    Deprecated: prefer ``spectrax serve``.
+    """
+    typer.secho(
+        "Note: 'config' is deprecated; use 'spectrax serve' instead.",
+        fg=typer.colors.YELLOW,
+        err=True,
+    )
     
     # Use default config path if not provided
     if config_file is None:

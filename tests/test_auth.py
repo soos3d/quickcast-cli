@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from tests.conftest import create_test_app, _reset_route_globals
 from spectrax import credentials as creds_mod
-from spectrax.api import RecordingsAPI
+from spectrax.recording.db import RecordingsAPI
 from spectrax.auth_gate import (
     COOKIE_NAME,
     LOGIN_RATE_LIMIT,

@@ -1,16 +1,2 @@
-[Unit]
-Description=QuickCast Surveillance System
-After=network.target
-
-[Service]
-Type=simple
-User=davide
-WorkingDirectory=/Users/davide/Documents/coding/perimeter-ai
-ExecStart=/usr/bin/python3 /Users/davide/Documents/coding/perimeter-ai/start_surveillance.py
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/surveillance.log
-StandardError=append:/var/log/surveillance-error.log
-
-[Install]
-WantedBy=multi-user.target
+# Deprecated. Use deploy/systemd/spectrax.service and mediamtx.service instead.
+# See deploy/README.md

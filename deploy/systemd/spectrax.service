@@ -1,0 +1,22 @@
+[Unit]
+Description=SpectraX surveillance core
+After=network.target mediamtx.service
+Wants=mediamtx.service
+
+[Service]
+Type=simple
+User=spectrax
+Group=spectrax
+WorkingDirectory=/opt/spectrax
+Environment=SPECTRAX_STATE_DIR=/var/lib/spectrax
+Environment=SPECTRAX_SECRETS_BACKEND=file
+# Install: python3.12 -m venv /opt/spectrax/venv && /opt/spectrax/venv/bin/pip install -e ".[cv]"
+ExecStart=/opt/spectrax/venv/bin/spectrax serve --config /etc/spectrax/spectrax.yml
+Restart=on-failure
+RestartSec=5
+# Hardening (optional)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -59,10 +59,10 @@ detection:
   
   # Detection filtering
   filters:
-    # Only detect these object classes (empty list = detect ALL objects)
+    # Only detect these object classes (null or [] = detect ALL objects)
     # Common classes: person, car, truck, bus, motorcycle, bicycle, dog, cat, bird
-    # IMPORTANT: Empty [] = detect everything, ["person"] = only detect people
-    classes: ["person", "mouse", "laptop", "bed", "mug", "phone"]  # Leave empty to detect all objects
+    # IMPORTANT: null/[] = detect everything, ["person"] = only detect people
+    classes: ["person", "mouse", "laptop", "bed", "mug", "phone"]
     
     # Filter by detection size (in pixels)
     min_area: null  # Minimum detection area (null = no limit)
@@ -131,7 +131,7 @@ recording:
   # NOTE: This is SEPARATE from detection.filters.classes
   # - detection.filters.classes = what to DETECT (empty = detect all)
   # - record_objects = what to RECORD (empty = record all detections)
-  # Empty list = record all detections
+  # null or [] = record all detections
   # Example: ["person", "car"] = only record people and cars
   record_objects: ["person", "car", "dog", "cat", "knife", "gun"]
   
@@ -152,21 +152,9 @@ security:
   tls_cert: ""  # Path to certificate file
 
 # ============================================================
-# ADVANCED SETTINGS (Optional)
+# MEDIAMTX PROCESS
 # ============================================================
-# Uncomment and modify these settings for advanced use cases
-
-# advanced:
-#   # Enable debug logging
-#   debug: false
-#   
-#   # Custom MediaMTX settings
-#   mediamtx:
-#     rtsp_port: 8554      # Unencrypted RTSP port
-#     rtsps_port: 8322     # Encrypted RTSPS port
-#     hls_port: 8888       # HLS streaming port
-#   
-#   # Performance tuning
-#   performance:
-#     max_detectors: 10    # Maximum concurrent detectors
-#     thread_pool_size: 3  # Thread pool size for processing
+# managed: true  = SpectraX spawns MediaMTX as a child (dev/default)
+# managed: false = external mediamtx.service (production systemd)
+mediamtx:
+  managed: true

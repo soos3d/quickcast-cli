@@ -1,11 +1,14 @@
-"""Project path resolution for package, config, models, and TLS material.
+"""Project path resolution for package, config, models, TLS, and state dir.
 
 After the ``src/spectrax`` layout, data files live at the repository root
 (``config/``, ``models/``, ``server.key``), not next to the Python package.
+Runtime state (secrets file, generated mediamtx.yml) uses ``state_dir()``.
 """
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Tuple
 
@@ -59,3 +62,25 @@ def default_tls_paths() -> Tuple[Path, Path]:
 def models_dir() -> Path:
     """Directory used for packaged / checked-in YOLO model weights."""
     return project_root() / "models"
+
+
+def state_dir() -> Path:
+    """Runtime state directory (secrets, generated configs).
+
+    Override with ``SPECTRAX_STATE_DIR``. Defaults:
+    - macOS: ``~/Library/Application Support/spectrax``
+    - else: ``~/.local/share/spectrax``
+    """
+    override = os.environ.get("SPECTRAX_STATE_DIR")
+    if override:
+        path = Path(override).expanduser()
+    elif sys.platform == "darwin":
+        path = Path.home() / "Library" / "Application Support" / "spectrax"
+    else:
+        path = Path.home() / ".local" / "share" / "spectrax"
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+    return path

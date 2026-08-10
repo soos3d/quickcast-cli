@@ -13,7 +13,7 @@ logger = logging.getLogger('db-connection-test')
 
 
 # Import relevant modules
-from spectrax.api import RecordingsAPI
+from spectrax.recording.db import RecordingsAPI
 from spectrax.recorder import RecordingManager
 
 def test_db_connection():
