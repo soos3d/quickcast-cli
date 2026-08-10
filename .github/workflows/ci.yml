@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api-tests:
+    name: API tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        # macOS matrix deferred until Phase 0 bootstrap is stable (see docs/PLAN.md)
+
+    defaults:
+      run:
+        working-directory: video-feed
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install web-test + dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-web-test.txt -r requirements-dev.txt
+
+      - name: Ruff (Phase 0 paths — correctness rules)
+        run: |
+          # Full style cleanup deferred (repo predates ruff); gate on bugs only
+          ruff check --select E,F,B \
+            videofeed/auth_gate.py \
+            videofeed/credentials.py \
+            videofeed/routes/auth.py \
+            tests/test_api_characterization.py \
+            tests/test_auth.py \
+            tests/test_config_security.py \
+            tests/conftest.py
+
+      - name: Pytest (API / unit, no torch, no MediaMTX)
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest \
+            tests/test_api_characterization.py \
+            tests/test_auth.py \
+            tests/test_config_security.py \
+            tests/test_db.py \
+            tests/test_db_connection.py \
+            -m "not slow and not requires_mediamtx"

@@ -1,43 +1,29 @@
 # Basic UI - Standalone Dashboard
 
-This directory contains a standalone HTML dashboard for quick access to your surveillance feeds.
+This directory contains a standalone HTML dashboard for quick access to surveillance feeds.
 
-## Usage
+## Status (Phase 0)
 
-### Option 1: Quick Launch (Recommended)
+**Unsupported for production use.** The unauthenticated `/paths` discovery server
+(`localhost:3333`) was removed in Phase 0. Opening `dashboard.html` via `file://` or
+cross-origin auto-discovery no longer works.
+
+Use the **integrated dashboard** served by the FastAPI app (same origin, session cookie):
+
 ```bash
-# From project root
-./scripts/surveillance.sh dashboard
-```
-
-### Option 2: Direct Access
-Open `dashboard.html` directly in your browser:
-```bash
-# From project root
-open video-feed/ui/dashboard.html
-
-# Or on Linux
-xdg-open video-feed/ui/dashboard.html
-```
-
-## Features
-
-- **Standalone**: No server required, works directly in browser
-- **Multi-camera grid view**: View all cameras simultaneously
-- **Auto-discovery**: Automatically detects available camera paths via API
-- **Manual configuration**: Fallback to manual path entry if API unavailable
-
-## Configuration
-
-The dashboard connects to:
-- **Paths API**: `http://localhost:3333/paths` (auto-discovery)
-- **Video streams**: `http://localhost:8080/video/stream?feed={id}`
-
-Make sure your surveillance system is running before opening the dashboard:
-```bash
+# After: surveillance admin set-password
 ./scripts/surveillance.sh config
+# Open http://127.0.0.1:8080/login
 ```
 
-## Note
+A same-origin rewrite of this standalone UI is deferred to Phase 4.
 
-This is a simplified standalone version. For the full-featured web interface with recordings browser and advanced features, use the integrated dashboard at `http://localhost:8080` when running the surveillance system.
+## Historical notes
+
+Previously this dashboard used:
+
+- **Paths API**: `http://localhost:3333/paths` (removed)
+- **Video streams**: `http://localhost:8080/video/stream?feed={id}` (now requires auth)
+
+Do not point tools at `GET /api/streams` as a drop-in for `/paths` — the response shape differs
+and the endpoint requires authentication.

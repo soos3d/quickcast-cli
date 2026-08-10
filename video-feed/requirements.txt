@@ -15,6 +15,9 @@ fastapi==0.115.12                # Web framework
 uvicorn==0.34.2                  # ASGI server
 Jinja2==3.1.6                    # Template engine
 starlette==0.46.2                # FastAPI dependency
+itsdangerous==2.2.0              # Signed session cookies (Phase 0 auth)
+argon2-cffi==23.1.0              # Admin password hashing
+python-multipart==0.0.20         # Form/body parsing
 
 # ============================================================
 # Computer Vision & Object Detection

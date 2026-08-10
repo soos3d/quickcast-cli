@@ -7,12 +7,10 @@ import threading
 import time
 import sys
 import os
-import json
 from pathlib import Path
 from typing import List, Optional, Dict
 import typer
 import yaml
-from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Add the parent directory to sys.path to make videofeed importable
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,34 +18,33 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # Now import from videofeed
-from videofeed.credentials import get_credentials, load_config_credentials, reset_creds
+from videofeed.credentials import (
+    get_credentials,
+    load_config_credentials,
+    reset_creds,
+    set_admin_password,
+    create_api_key,
+    list_api_keys,
+    revoke_api_key,
+)
 from videofeed.config import write_cfg, load_config_paths, SurveillanceConfig
-from videofeed.utils import detect_host_ip, check_mediamtx_installed, launch_mediamtx, print_urls
+from videofeed.utils import (
+    detect_host_ip,
+    check_mediamtx_installed,
+    launch_mediamtx,
+    print_urls,
+    show_stream_credentials,
+)
 from videofeed.visualizer import start_visualizer
 from videofeed.constants import DEFAULT_PATHS
 
 app = typer.Typer(add_completion=False)
-
-class PathsAPIHandler(BaseHTTPRequestHandler):
-    """Simple HTTP handler for paths API."""
-    
-    def __init__(self, *args, paths=None, **kwargs):
-        self.paths = paths
-        super().__init__(*args, **kwargs)
-    
-    def do_GET(self):
-        """Handle GET requests."""
-        if self.path == "/paths":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            
-            data = {"count": len(self.paths), "paths": self.paths}
-            self.wfile.write(json.dumps(data).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
+admin_app = typer.Typer(help="Admin dashboard password management")
+apikey_app = typer.Typer(help="API key management for machine clients")
+credentials_app = typer.Typer(help="Reveal stream credentials (TTY)")
+app.add_typer(admin_app, name="admin")
+app.add_typer(apikey_app, name="apikey")
+app.add_typer(credentials_app, name="credentials")
 
 
 class SurveillanceSystem:
@@ -56,8 +53,6 @@ class SurveillanceSystem:
     def __init__(self):
         self.mediamtx_process = None
         self.detector_thread = None
-        self.api_server = None
-        self.api_thread = None
         self.running = False
         self.config = {}
         
@@ -68,7 +63,6 @@ class SurveillanceSystem:
         config_path: Optional[Path],
         tls_key: Optional[Path],
         tls_cert: Optional[Path],
-        api_port: Optional[int]
     ) -> Dict:
         """Start the MediaMTX streaming server."""
         check_mediamtx_installed("mediamtx")
@@ -124,34 +118,12 @@ class SurveillanceSystem:
         self.config = {
             "creds": creds,
             "paths": config_paths,
-            "host_ip": detect_host_ip(),
-            "api_port": api_port,
+            "host_ip": detect_host_ip() if bind in ("0.0.0.0", "::") else bind,
+            "bind": bind,
             "use_rtsps": tls_key is not None and tls_cert is not None
         }
         
-        # Start API server if port is specified (silent)
-        if api_port:
-            self.start_api_server(api_port)
-        
         return self.config
-        
-    def start_api_server(self, port: int):
-        """Start the API server for path discovery."""
-        # Create a handler class with access to paths
-        paths = self.config["paths"]
-        
-        def handler_factory(*args, **kwargs):
-            return PathsAPIHandler(*args, paths=paths, **kwargs)
-        
-        # Start the server in a separate thread
-        self.api_server = HTTPServer(("0.0.0.0", port), handler_factory)
-        self.api_thread = threading.Thread(target=self.api_server.serve_forever, daemon=True)
-        self.api_thread.start()
-        
-        # API server starts silently - will be shown in final status
-        # typer.echo(f"🔍 API server started on port {port}")
-        # typer.echo(f"  • Local: http://127.0.0.1:{port}/paths")
-        # typer.echo(f"  • Network: http://{self.config['host_ip']}:{port}/paths")
         
     def start_detector(
         self,
@@ -298,14 +270,21 @@ class SurveillanceSystem:
         typer.echo(f"  Username: {self.config['creds']['read_user']}")
         typer.echo(f"  Password: {self.config['creds']['read_pass']}")
         typer.echo()
-        # Show example for first camera
+        # Show example for first camera (no embedded passwords)
         if self.config["paths"]:
             camera_name = self.config["paths"][0].split('/')[-1]
             if self.config["use_rtsps"]:
-                viewer_url = f"rtsps://{self.config['creds']['read_user']}:{self.config['creds']['read_pass']}@{self.config['host_ip']}:8322/{self.config['paths'][0]}"
+                viewer_url = f"rtsps://{self.config['host_ip']}:8322/{self.config['paths'][0]}"
             else:
-                viewer_url = f"rtsp://{self.config['creds']['read_user']}:{self.config['creds']['read_pass']}@{self.config['host_ip']}:8554/{self.config['paths'][0]}"
-            typer.secho(f"  Example ({camera_name}): {viewer_url}", fg=typer.colors.BRIGHT_BLACK)
+                viewer_url = f"rtsp://{self.config['host_ip']}:8554/{self.config['paths'][0]}"
+            typer.secho(
+                f"  Example ({camera_name}): {viewer_url}",
+                fg=typer.colors.BRIGHT_BLACK,
+            )
+            typer.secho(
+                "  Passwords: surveillance credentials show-stream",
+                fg=typer.colors.BRIGHT_BLACK,
+            )
         typer.echo()
         
         # Print recording info if enabled
@@ -327,24 +306,19 @@ class SurveillanceSystem:
         # Advanced URLs (collapsed)
         typer.secho("🔗 ADVANCED", fg=typer.colors.BRIGHT_BLACK, bold=True)
         
-        # All stream URLs with credentials
         if len(self.config["paths"]) > 1:
-            typer.echo(f"  All stream URLs:")
+            typer.echo("  All stream URLs (no passwords embedded):")
             for path in self.config["paths"]:
                 camera_name = path.split('/')[-1]
                 if self.config["use_rtsps"]:
-                    url = f"rtsps://{self.config['creds']['read_user']}:{self.config['creds']['read_pass']}@{self.config['host_ip']}:8322/{path}"
+                    url = f"rtsps://{self.config['host_ip']}:8322/{path}"
                 else:
-                    url = f"rtsp://{self.config['creds']['read_user']}:{self.config['creds']['read_pass']}@{self.config['host_ip']}:8554/{path}"
+                    url = f"rtsp://{self.config['host_ip']}:8554/{path}"
                 typer.echo(f"    • {camera_name}: {url}")
             typer.echo()
         
-        # HLS streaming
         typer.echo(f"  HLS streaming: http://{self.config['host_ip']}:8888/[stream-path]/index.m3u8")
-        
-        # API endpoint
-        if self.config.get("api_port"):
-            typer.echo(f"  Paths API: http://{self.config['host_ip']}:{self.config['api_port']}/paths")
+        typer.echo("  Stream passwords: surveillance credentials show-stream")
             
         typer.echo("\n" + "="*70)
         typer.secho("Press Ctrl+C to stop", fg=typer.colors.BRIGHT_BLACK)
@@ -360,13 +334,7 @@ class SurveillanceSystem:
             typer.echo("  ✓ Streaming server stopped")
             
         # Detector thread will stop automatically as it's daemon
-        # We don't need to join it since it's a daemon thread
         typer.echo("  ✓ Object detection stopped")
-        
-        # Shutdown API server if running
-        if self.api_server:
-            self.api_server.shutdown()
-            typer.echo("  ✓ API server stopped")
         
         # Clean up temp directory if it exists
         if hasattr(self, 'temp_dir'):
@@ -403,7 +371,6 @@ def config(
         confidence=config.get_detection_confidence(),
         width=config.get_detection_resolution()[0],
         height=config.get_detection_resolution()[1],
-        api_port=config.get_api_port(),
         tls_key=tls_key,
         tls_cert=tls_cert,
         recording=config.is_recording_enabled(),
@@ -423,7 +390,10 @@ def start(
         "--path", "-p",
         help="Camera stream paths"
     ),
-    bind: str = typer.Option("0.0.0.0", help="Bind IP address"),
+    bind: str = typer.Option(
+        "127.0.0.1",
+        help="Bind IP for MediaMTX (default loopback; use 0.0.0.0 for LAN after auth is configured)",
+    ),
     config: Optional[Path] = typer.Option(None, "--config", "-c", help="Custom config file"),
     detector: bool = typer.Option(True, "--detector/--no-detector", help="Enable object detection"),
     detector_port: int = typer.Option(8080, "--detector-port", help="Object detection web port"),
@@ -431,7 +401,6 @@ def start(
     confidence: float = typer.Option(0.4, "--confidence", help="Detection confidence"),
     width: int = typer.Option(960, "--width", help="Video width"),
     height: int = typer.Option(540, "--height", help="Video height"),
-    api_port: Optional[int] = typer.Option(3333, "--api-port", help="API port for paths"),
     tls_key: Optional[Path] = typer.Option(None, help="TLS key path"),
     tls_cert: Optional[Path] = typer.Option(None, help="TLS certificate path"),
     recording: bool = typer.Option(True, "--recording/--no-recording", help="Enable recording"),
@@ -458,14 +427,13 @@ def start(
             config_path=config,
             tls_key=tls_key,
             tls_cert=tls_cert,
-            api_port=api_port
         )
         
         # Start detector if enabled
         if detector:
             time.sleep(1)  # Give server a moment to stabilize
             system.start_detector(
-                host="0.0.0.0",
+                host=bind,
                 port=detector_port,
                 model=model,
                 confidence=confidence,
@@ -504,27 +472,31 @@ def quick(
     
     typer.secho(f"🚀 Quick starting surveillance with {cameras} camera(s)...", fg=typer.colors.GREEN, bold=True)
     
-    # Call start with defaults
+    # Call start with defaults (loopback bind; no /paths side-server)
     start(
         paths=paths,
-        bind="0.0.0.0",
+        bind="127.0.0.1",
         detector=detector,
         detector_port=8080,
-        api_port=3333
     )
 
 
 @app.command()
 def run(
     paths: List[str] = typer.Option(DEFAULT_PATHS, "--path", "-p", help="Logical RTSP path(s) to publish/view. Can be specified multiple times."),
-    bind: str = typer.Option("0.0.0.0", help="Bind IP (default), listens on all interfaces (LAN + localhost); use 127.0.0.1 to restrict to local only."),
+    bind: str = typer.Option(
+        "127.0.0.1",
+        help="Bind IP (default loopback; use 0.0.0.0 for LAN).",
+    ),
     config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to pre-made mediamtx.yml"),
     tls_key: Optional[Path] = typer.Option(None, help="Path to TLS private key for RTSPS."),
     tls_cert: Optional[Path] = typer.Option(None, help="Path to TLS certificate for RTSPS."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show server configuration details."),
-    api_port: Optional[int] = typer.Option(None, "--api-port", "-a", help="Port for JSON status API."),
 ) -> None:
     """Start RTSP/HLS micro-server and display connection info (no object detection)."""
+    import contextlib
+    import tempfile
+
     check_mediamtx_installed("mediamtx")
 
     # Use default TLS paths if not provided
@@ -562,8 +534,6 @@ def run(
         config_paths = load_config_paths(cfg_path)
         temp_context = contextlib.nullcontext()
     else:
-        import tempfile
-        import contextlib
         temp_context = tempfile.TemporaryDirectory(prefix="video-feed-")
 
     with temp_context as tmpdir:
@@ -576,7 +546,12 @@ def run(
         if verbose:
             typer.secho("MediaMTX Configuration:", fg=typer.colors.BRIGHT_BLUE, bold=True)
             typer.secho(f"Config file: {cfg_path}", fg=typer.colors.BLUE)
-            typer.echo(cfg_path.read_text())
+            # Redact passwords from verbose dump
+            redacted = cfg_path.read_text()
+            for secret in (creds.get("publish_pass"), creds.get("read_pass")):
+                if secret:
+                    redacted = redacted.replace(secret, "***")
+            typer.echo(redacted)
 
         server = launch_mediamtx(cfg_path)
         typer.echo("⏳ Starting MediaMTX ...")
@@ -585,30 +560,8 @@ def run(
         except subprocess.TimeoutExpired:
             pass  # Expected: server is running
 
-        host_ip = detect_host_ip()
+        host_ip = detect_host_ip() if bind in ("0.0.0.0", "::") else bind
         print_urls(host_ip, config_paths, creds, rtsps=use_rtsps)
-
-        # JSON status API endpoint
-        if api_port:
-            class StatusHandler(BaseHTTPRequestHandler):
-                def do_GET(self):
-                    if self.path == "/paths":
-                        data = {"count": len(config_paths), "paths": config_paths}
-                        resp = json.dumps(data)
-                        self.send_response(200)
-                        self.send_header("Content-Type", "application/json")
-                        self.send_header("Access-Control-Allow-Origin", "*")
-                        self.end_headers()
-                        self.wfile.write(resp.encode())
-                    else:
-                        self.send_response(404)
-                        self.end_headers()
-            api_server = HTTPServer(("0.0.0.0", api_port), StatusHandler)
-
-            threading.Thread(target=api_server.serve_forever, daemon=True).start()
-            typer.echo(f"\n 🔍 Paths API: Use this URL in the UI to auto-detect available paths \n")
-            typer.echo(f"🖥️ If your UI is running on the same device as this server: http://127.0.0.1:{api_port}/paths")
-            typer.echo(f"🌐 If your UI is running on a different device: http://{host_ip}:{api_port}/paths")
 
         typer.secho("Press Ctrl+C to quit.\n", fg=typer.colors.BRIGHT_BLACK)
         try:
@@ -621,9 +574,85 @@ def run(
 
 @app.command()
 def reset():
-    """Clear stored publisher/viewer credentials."""
+    """Clear all stored secrets (stream + admin + API keys + session signing key)."""
     reset_creds()
-    typer.echo("🔑 Credentials reset; regenerated on next run.")
+    typer.echo("🔑 All credentials reset; stream secrets regenerate on next run.")
+    typer.echo("   Re-set admin password: surveillance admin set-password")
+
+
+@admin_app.command("set-password")
+def admin_set_password(
+    password: Optional[str] = typer.Option(
+        None,
+        "--password",
+        "-p",
+        help="Admin password (prompted if omitted)",
+        hide_input=True,
+    ),
+):
+    """Set the dashboard admin password (argon2-hashed in keyring)."""
+    if not password:
+        password = typer.prompt("Admin password", hide_input=True, confirmation_prompt=True)
+    try:
+        set_admin_password(password)
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.secho("Admin password saved.", fg=typer.colors.GREEN)
+
+
+@apikey_app.command("create")
+def apikey_create(
+    name: str = typer.Option(..., "--name", "-n", help="Key name/label"),
+    scope: str = typer.Option("read", "--scope", "-s", help="read or admin"),
+):
+    """Create an API key. Raw key is printed once."""
+    try:
+        raw = create_api_key(name=name, scope=scope)
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.secho("API key created. Store it now — it will not be shown again:", fg=typer.colors.YELLOW)
+    typer.echo(raw)
+
+
+@apikey_app.command("list")
+def apikey_list():
+    """List API keys (metadata only; no secrets)."""
+    keys = list_api_keys(include_revoked=True)
+    if not keys:
+        typer.echo("No API keys.")
+        return
+    for k in keys:
+        status = "revoked" if k.get("revoked_at") else "active"
+        typer.echo(
+            f"  {k.get('id')}  name={k.get('name')}  scope={k.get('scope')}  "
+            f"status={status}  created={k.get('created_at')}"
+        )
+
+
+@apikey_app.command("revoke")
+def apikey_revoke(
+    key_id: str = typer.Argument(..., help="Key id or name to revoke"),
+):
+    """Revoke an API key by id or name."""
+    if revoke_api_key(key_id):
+        typer.secho(f"Revoked: {key_id}", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"Key not found: {key_id}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+@credentials_app.command("show-stream")
+def credentials_show_stream(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Allow printing secrets when stdout is not a TTY",
+    ),
+):
+    """Print MediaMTX publisher/viewer passwords (TTY only by default)."""
+    show_stream_credentials(force=force)
 
 
 @app.command()

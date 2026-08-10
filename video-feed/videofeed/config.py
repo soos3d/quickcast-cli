@@ -58,7 +58,8 @@ def create_config(
     }
 
     if tls_key and tls_cert:
-        config["rtspEncryption"] = "optional"
+        # Phase 0: strict RTSPS only — clients must use rtsps://:8322
+        config["rtspEncryption"] = "strict"
         config["rtspServerKey"] = tls_key
         config["rtspServerCert"] = tls_cert
 
@@ -137,8 +138,8 @@ class SurveillanceConfig:
         self.config_data = {
             'cameras': DEFAULT_PATHS,
             'network': {
-                'bind': '0.0.0.0',
-                'api_port': 3333
+                'bind': '127.0.0.1',
+                # api_port removed: unauthenticated /paths side-server deleted (Phase 0)
             },
             'detection': {
                 'enabled': True,
@@ -188,12 +189,12 @@ class SurveillanceConfig:
         return self.config_data.get('recording', {})
     
     def get_bind_address(self) -> str:
-        """Get bind address."""
-        return self.get_network_config().get('bind', '0.0.0.0')
+        """Get bind address (default loopback until explicitly opened)."""
+        return self.get_network_config().get('bind', '127.0.0.1')
     
-    def get_api_port(self) -> int:
-        """Get API port."""
-        return self.get_network_config().get('api_port', 3333)
+    def get_api_port(self) -> Optional[int]:
+        """Legacy paths API port — always None after Phase 0 removal of /paths."""
+        return self.get_network_config().get('api_port')
     
     def is_detection_enabled(self) -> bool:
         """Check if detection is enabled."""

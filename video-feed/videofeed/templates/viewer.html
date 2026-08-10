@@ -240,9 +240,13 @@
         // Fetch status info every 2 seconds
         setInterval(async function() {
             try {
-                const response = await fetch('/status');
+                const response = await fetch('/status', { credentials: 'include' });
+                if (response.status === 401) { window.location.href = '/login'; return; }
                 const data = await response.json();
-                document.getElementById('statusInfo').innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(data, null, 2);
+                const statusEl = document.getElementById('statusInfo');
+                statusEl.replaceChildren(pre);
                 
                 // Update current feed info if we have active feed
                 const currentFeedId = new URLSearchParams(window.location.search).get('feed');

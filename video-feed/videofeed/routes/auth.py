@@ -1,42 +1,61 @@
-"""Authentication routes."""
+"""Authentication routes: login / logout (session cookie)."""
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from __future__ import annotations
 
-from videofeed.credentials import get_credentials
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field
+
+from videofeed import credentials as creds_mod
+from videofeed.auth_gate import (
+    check_login_rate_limit,
+    clear_login_attempts,
+    clear_session_cookie,
+    create_session_token,
+    record_login_attempt,
+    set_session_cookie,
+)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
-class UserCredentials(BaseModel):
-    """User credentials for authentication."""
-    username: str
-    password: str
+class LoginRequest(BaseModel):
+    """Dashboard login body."""
+
+    password: str = Field(..., min_length=1)
 
 
-@router.post("/verify")
-async def verify_credentials(user_creds: UserCredentials):
-    """Verify if credentials match those in the system keychain."""
-    creds = get_credentials()
-    
-    # Check publisher credentials
-    if user_creds.username == creds["publish_user"] and user_creds.password == creds["publish_pass"]:
-        return {
-            "authenticated": True,
-            "user_type": "publisher",
-            "username": creds["publish_user"]
-        }
-    
-    # Check viewer credentials
-    if user_creds.username == creds["read_user"] and user_creds.password == creds["read_pass"]:
-        return {
-            "authenticated": True,
-            "user_type": "viewer",
-            "username": creds["read_user"]
-        }
-    
-    # Invalid credentials
-    raise HTTPException(
-        status_code=401,
-        detail="Invalid credentials"
-    )
+class LoginResponse(BaseModel):
+    """Successful login."""
+
+    authenticated: bool = True
+    scope: str = "admin"
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login(body: LoginRequest, request: Request, response: Response):
+    """Authenticate admin password and set session cookie."""
+    client_key = request.client.host if request.client else "unknown"
+    check_login_rate_limit(client_key)
+
+    admin_hash = creds_mod.get_admin_password_hash()
+    if not admin_hash:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin password not configured. Run: surveillance admin set-password",
+        )
+
+    if not creds_mod.verify_admin_password(body.password):
+        record_login_attempt(client_key)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    clear_login_attempts(client_key)
+    token = create_session_token(scope="admin")
+    set_session_cookie(response, token, request)
+    return LoginResponse(authenticated=True, scope="admin")
+
+
+@router.post("/logout")
+async def logout(response: Response):
+    """Clear the session cookie."""
+    clear_session_cookie(response)
+    return {"authenticated": False}
