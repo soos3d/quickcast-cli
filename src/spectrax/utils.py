@@ -32,7 +32,7 @@ def resolve_model_path(model_name: str) -> str:
     return model_name
 
 
-def launch_mediamtx(cfg_path: Path) -> subprocess.Popen:
+def launch_mediamtx(cfg_path: Path):
     """Launch the MediaMTX server with the given configuration."""
     from spectrax.mediamtx.process import MediaMTXError, launch
 
