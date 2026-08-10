@@ -7,14 +7,20 @@ import threading
 import time
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import uvicorn
 
 from videofeed.detector import DetectorManager
 from videofeed.recorder import RecordingManager
 from videofeed.api import RecordingsAPI
 from videofeed.utils import detect_host_ip
+from videofeed.auth_gate import (
+    AuthMiddleware,
+    AuthPrincipal,
+    require_read,
+)
 
 # Import route modules
 from videofeed.routes import (
@@ -38,29 +44,43 @@ logger = logging.getLogger('video-api-server')
 # Create FastAPI app
 app = FastAPI(title="Video Feed API")
 
+# Phase 0: Secure=False on plain HTTP (trusted LAN). Set True when TLS terminates here.
+app.state.secure_cookies = False
+
 # Get host IP for CORS configuration
 host_ip = detect_host_ip()
 
-# Configure CORS middleware with restricted origins
+# Configure CORS middleware with restricted origins (same-origin dashboard primary)
 allowed_origins = [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
     f"http://{host_ip}:8080",
-    "http://localhost:3000",  # If you have a separate frontend
-    "http://127.0.0.1:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,  # ✅ Restricted to specific origins
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "PUT"],  # ✅ Specific methods only
-    allow_headers=["Content-Type", "Authorization", "Cookie"],  # ✅ Specific headers
-    max_age=3600,  # Cache preflight requests for 1 hour
+    allow_methods=["GET", "POST", "DELETE", "PUT"],
+    allow_headers=["Content-Type", "Authorization", "Cookie"],
+    max_age=3600,
 )
 
-# CORS configured silently - no need to log on every startup
-# logger.info(f"CORS configured for origins: {allowed_origins}")
+# Auth gate (outermost after CORS — added last so it runs first on request)
+app.add_middleware(AuthMiddleware)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Never leak stack traces or paths to clients (H2)."""
+    if isinstance(exc, HTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    logger.error("Unhandled error on %s: %s", request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "internal", "message": "Internal server error"}},
+    )
+
 
 # Include all route modules
 app.include_router(video_router)
@@ -69,7 +89,6 @@ app.include_router(files_router)
 app.include_router(recordings_router)
 app.include_router(statistics_router)
 app.include_router(auth_router)
-
 # Global instances
 detector_manager = None
 recordings_api = None
@@ -94,32 +113,36 @@ def set_detector_manager(manager):
 
 
 @app.get("/status")
-async def get_status(feed: Optional[str] = None):
+async def get_status(
+    feed: Optional[str] = None,
+    _principal: AuthPrincipal = Depends(require_read),
+):
     """Get the detector status for one or all feeds."""
     global detector_manager
     if detector_manager is None:
         raise HTTPException(status_code=503, detail="Detector manager not initialized")
-    
+
     return detector_manager.get_detector_status(feed)
 
 
 @app.get("/feeds")
-async def get_feeds():
+async def get_feeds(
+    _principal: AuthPrincipal = Depends(require_read),
+):
     """Get information about all available feeds."""
     global detector_manager
     if detector_manager is None:
         raise HTTPException(status_code=503, detail="Detector manager not initialized")
-    
+
     feeds = {}
     for detector_id, detector in detector_manager.get_all_detectors().items():
         feeds[detector_id] = {
             "id": detector_id,
             "name": detector.get_name(),
-            "source": detector._mask_credentials(detector.source_url)
+            "source": detector._mask_credentials(detector.source_url),
         }
-    
-    return {"feeds": feeds, "default": detector_manager.default_detector_id}
 
+    return {"feeds": feeds, "default": detector_manager.default_detector_id}
 
 # Create a shutdown event to coordinate graceful shutdown
 shutdown_requested = threading.Event()
@@ -144,7 +167,7 @@ def force_exit():
 
 def start_visualizer(
     rtsp_urls: List[str],
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 8000,
     model_path: str = "yolov8n.pt",
     confidence: float = 0.4,

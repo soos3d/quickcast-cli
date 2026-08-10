@@ -175,10 +175,8 @@
         function loadRecordings(resetContent = true) {
             showLoading(true);
             
-            // Prepare API URL with filters
-            let apiUrl = `/recordings?limit=${currentLimit}&offset=${currentOffset}`;
+            let apiUrl = `/api/recordings?limit=${currentLimit}&offset=${currentOffset}`;
             
-            // Add date filters if specified
             if (startDateInput.value) {
                 apiUrl += `&start_date=${startDateInput.value}T00:00:00`;
             }
@@ -187,8 +185,12 @@
                 apiUrl += `&end_date=${endDateInput.value}T23:59:59`;
             }
             
-            fetch(apiUrl)
+            fetch(apiUrl, { credentials: 'include' })
                 .then(response => {
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                        throw new Error('Unauthorized');
+                    }
                     if (!response.ok) {
                         throw new Error('Failed to load recordings');
                     }
@@ -198,30 +200,28 @@
                     showLoading(false);
                     
                     if (resetContent) {
-                        recordingsContainer.innerHTML = '';
+                        recordingsContainer.replaceChildren();
                         recordingsMap = {};
                     }
                     
-                    const recordings = data.recordings;
+                    const recordings = data.recordings || [];
                     
                     if (recordings.length === 0 && currentOffset === 0) {
-                        recordingsContainer.innerHTML = `
-                            <div class="col-12 text-center">
-                                <p>No recordings found matching your criteria.</p>
-                            </div>
-                        `;
+                        const empty = document.createElement('div');
+                        empty.className = 'col-12 text-center';
+                        const p = document.createElement('p');
+                        p.textContent = 'No recordings found matching your criteria.';
+                        empty.appendChild(p);
+                        recordingsContainer.appendChild(empty);
                         loadMoreBtn.classList.add('d-none');
                         return;
                     }
                     
-                    // Hide the "no recordings" message if we have recordings
                     noRecordings.classList.add('d-none');
                     
-                    // Determine if we should show "load more" button
                     hasMoreRecordings = recordings.length === currentLimit;
                     loadMoreBtn.classList.toggle('d-none', !hasMoreRecordings);
                     
-                    // Render recordings
                     recordings.forEach(recording => {
                         recordingsMap[recording.id] = recording;
                         renderRecordingCard(recording);
@@ -230,70 +230,90 @@
                 .catch(error => {
                     showLoading(false);
                     console.error('Error:', error);
-                    alert('Failed to load recordings. See console for details.');
+                    if (error.message !== 'Unauthorized') {
+                        alert('Failed to load recordings. See console for details.');
+                    }
                 });
         }
 
-        // Render a recording card
+        // Render a recording card without interpolating untrusted data into HTML
         function renderRecordingCard(recording) {
             const dateTime = new Date(recording.timestamp);
             const formattedDate = dateTime.toLocaleDateString();
             const formattedTime = dateTime.toLocaleTimeString();
             
-            // Extract object types for labels
-            const objects = JSON.parse(typeof recording.objects_detected === 'string' 
-                ? recording.objects_detected 
-                : JSON.stringify(recording.objects_detected));
+            let objects = [];
+            try {
+                objects = JSON.parse(typeof recording.objects_detected === 'string' 
+                    ? recording.objects_detected 
+                    : JSON.stringify(recording.objects_detected || []));
+            } catch (e) {
+                objects = [];
+            }
             
-            // Count occurrences of each object type
             const objectCounts = {};
             objects.forEach(obj => {
-                const className = obj.class;
+                const className = obj.class || 'unknown';
                 objectCounts[className] = (objectCounts[className] || 0) + 1;
             });
             
-            // Create labels for each object type
-            const objectLabels = Object.entries(objectCounts)
-                .map(([className, count]) => `
-                    <span class="label-pill" style="background-color: #007bff;">
-                        ${className} (${count})
-                    </span>
-                `).join('');
-            
-            // Generate card HTML
             const card = document.createElement('div');
             card.className = 'col-lg-4 col-md-6';
-            card.innerHTML = `
-                <div class="card recording-card shadow-sm">
-                    <div class="position-relative">
-                        <img src="/recordings/${recording.thumbnail_path.split('/').pop()}" 
-                             class="thumbnail" alt="Recording thumbnail">
-                        <div class="position-absolute bottom-0 end-0 p-2 bg-dark text-white rounded-start">
-                            ${Math.round(recording.duration)}s
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <h5 class="card-title">${recording.stream_name}</h5>
-                        <p class="card-text">
-                            <small class="text-muted">${formattedDate} at ${formattedTime}</small>
-                        </p>
-                        <div class="mb-2">
-                            ${objectLabels}
-                        </div>
-                        <button class="btn btn-primary btn-sm w-100 mt-2 watch-btn" 
-                                data-recording-id="${recording.id}">
-                            Watch
-                        </button>
-                    </div>
-                </div>
-            `;
             
-            // Add click event to the "Watch" button
-            card.querySelector('.watch-btn').addEventListener('click', () => {
-                openVideoModal(recording.id);
+            const cardInner = document.createElement('div');
+            cardInner.className = 'card recording-card shadow-sm';
+            
+            const thumbWrap = document.createElement('div');
+            thumbWrap.className = 'position-relative';
+            const img = document.createElement('img');
+            img.className = 'thumbnail';
+            img.alt = 'Recording thumbnail';
+            const thumbName = (recording.thumbnail_path || recording.thumbnail_url || '').split('/').pop();
+            if (thumbName) {
+                img.src = recording.thumbnail_url || `/recordings/${thumbName}`;
+            }
+            thumbWrap.appendChild(img);
+            const durationBadge = document.createElement('div');
+            durationBadge.className = 'position-absolute bottom-0 end-0 p-2 bg-dark text-white rounded-start';
+            durationBadge.textContent = `${Math.round(recording.duration || 0)}s`;
+            thumbWrap.appendChild(durationBadge);
+            cardInner.appendChild(thumbWrap);
+            
+            const body = document.createElement('div');
+            body.className = 'card-body';
+            const title = document.createElement('h5');
+            title.className = 'card-title';
+            title.textContent = recording.stream_name || 'Unknown stream';
+            body.appendChild(title);
+            
+            const meta = document.createElement('p');
+            meta.className = 'card-text';
+            const small = document.createElement('small');
+            small.className = 'text-muted';
+            small.textContent = `${formattedDate} at ${formattedTime}`;
+            meta.appendChild(small);
+            body.appendChild(meta);
+            
+            const labels = document.createElement('div');
+            labels.className = 'mb-2';
+            Object.entries(objectCounts).forEach(([className, count]) => {
+                const pill = document.createElement('span');
+                pill.className = 'label-pill';
+                pill.style.backgroundColor = '#007bff';
+                pill.textContent = `${className} (${count})`;
+                labels.appendChild(pill);
             });
+            body.appendChild(labels);
             
-            // Add card to container
+            const watchBtn = document.createElement('button');
+            watchBtn.className = 'btn btn-primary btn-sm w-100 mt-2 watch-btn';
+            watchBtn.dataset.recordingId = String(recording.id);
+            watchBtn.textContent = 'Watch';
+            watchBtn.addEventListener('click', () => openVideoModal(recording.id));
+            body.appendChild(watchBtn);
+            
+            cardInner.appendChild(body);
+            card.appendChild(cardInner);
             recordingsContainer.appendChild(card);
         }
 
@@ -308,21 +328,22 @@
             
             currentRecordingId = recordingId;
             
-            // Set video source
-            const fileName = recording.file_path.split('/').pop();
-            videoPlayer.src = `/recordings/${fileName}`;
+            const fileName = (recording.file_path || recording.file_url || '').split('/').pop();
+            videoPlayer.src = recording.file_url || `/recordings/${fileName}`;
             videoPlayer.load();
             
-            // Update modal title
             document.getElementById('videoModalLabel').textContent = 
-                `${recording.stream_name} - ${new Date(recording.timestamp).toLocaleString()}`;
+                `${recording.stream_name || 'Recording'} - ${new Date(recording.timestamp).toLocaleString()}`;
             
-            // Display detection details
-            const objects = JSON.parse(typeof recording.objects_detected === 'string' 
-                ? recording.objects_detected 
-                : JSON.stringify(recording.objects_detected));
+            let objects = [];
+            try {
+                objects = JSON.parse(typeof recording.objects_detected === 'string' 
+                    ? recording.objects_detected 
+                    : JSON.stringify(recording.objects_detected || []));
+            } catch (e) {
+                objects = [];
+            }
             
-            // Group by class and show confidence
             const detectionsByClass = {};
             objects.forEach(obj => {
                 if (!detectionsByClass[obj.class]) {
@@ -331,24 +352,22 @@
                 detectionsByClass[obj.class].push(obj.confidence);
             });
             
-            // Format detection details HTML
-            let detailsHtml = '<ul class="list-group">';
+            modalDetectionDetails.replaceChildren();
+            const ul = document.createElement('ul');
+            ul.className = 'list-group';
             Object.entries(detectionsByClass).forEach(([className, confidences]) => {
-                // Get max confidence for this class
                 const maxConfidence = Math.max(...confidences);
-                detailsHtml += `
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        ${className}
-                        <span class="badge bg-primary rounded-pill">
-                            ${confidences.length}× (max conf: ${maxConfidence.toFixed(2)})
-                        </span>
-                    </li>
-                `;
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.appendChild(document.createTextNode(className));
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-primary rounded-pill';
+                badge.textContent = `${confidences.length}× (max conf: ${maxConfidence.toFixed(2)})`;
+                li.appendChild(badge);
+                ul.appendChild(li);
             });
-            detailsHtml += '</ul>';
-            modalDetectionDetails.innerHTML = detailsHtml;
+            modalDetectionDetails.appendChild(ul);
             
-            // Show modal
             videoModal.show();
         }
 
@@ -360,20 +379,23 @@
                 return;
             }
             
-            fetch(`/recordings/${currentRecordingId}`, {
-                method: 'DELETE'
+            fetch(`/api/recordings/${currentRecordingId}`, {
+                method: 'DELETE',
+                credentials: 'include',
             })
             .then(response => {
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    throw new Error('Unauthorized');
+                }
                 if (!response.ok) {
                     throw new Error('Failed to delete recording');
                 }
                 return response.json();
             })
             .then(data => {
-                // Close modal and reload recordings
                 videoModal.hide();
                 
-                // Remove the deleted recording from the DOM
                 const elements = document.querySelectorAll(`[data-recording-id="${currentRecordingId}"]`);
                 elements.forEach(el => {
                     const card = el.closest('.col-lg-4.col-md-6');
@@ -382,13 +404,13 @@
                     }
                 });
                 
-                // Check if we need to load more or show "no recordings" message
                 if (recordingsContainer.children.length === 0) {
-                    recordingsContainer.innerHTML = `
-                        <div class="col-12 text-center">
-                            <p>No recordings available.</p>
-                        </div>
-                    `;
+                    const empty = document.createElement('div');
+                    empty.className = 'col-12 text-center';
+                    const p = document.createElement('p');
+                    p.textContent = 'No recordings available.';
+                    empty.appendChild(p);
+                    recordingsContainer.appendChild(empty);
                     loadMoreBtn.classList.add('d-none');
                 }
                 
@@ -396,7 +418,9 @@
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Failed to delete recording');
+                if (error.message !== 'Unauthorized') {
+                    alert('Failed to delete recording');
+                }
             });
         }
 

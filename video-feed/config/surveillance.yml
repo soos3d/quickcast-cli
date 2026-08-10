@@ -15,14 +15,12 @@ cameras:
 # NETWORK SETTINGS
 # ============================================================
 network:
-  # Bind address for all services
-  # "127.0.0.1" = localhost only (secure, local access)
-  # "0.0.0.0" = all interfaces (LAN access, less secure)
+  # Bind address for MediaMTX and the dashboard
+  # "127.0.0.1" = localhost only (default after Phase 0)
+  # "0.0.0.0" = all interfaces (LAN access — only after admin password + auth are configured)
   bind: "127.0.0.1"
-  
-  # API port for camera path discovery
-  # Use for custom web app
-  api_port: 3333
+
+  # NOTE: api_port /paths side-server was removed in Phase 0 (unauthenticated).
 
 # ============================================================
 # OBJECT DETECTION SETTINGS

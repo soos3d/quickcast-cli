@@ -12,10 +12,26 @@ templates_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templ
 templates = Jinja2Templates(directory=templates_path)
 
 
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Render the login page (public)."""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Render the main viewer page."""
-    return templates.TemplateResponse("viewer.html", {"request": request})
+    # Template expects feed context; empty defaults until detector injects real feeds
+    # (Phase 2 will pass detector state via Depends).
+    context = {
+        "request": request,
+        "feeds": {},
+        "active_feed_id": None,
+        "active_feed_name": "No feed",
+        "active_feed_source": "",
+        "model": "",
+    }
+    return templates.TemplateResponse("viewer.html", context)
 
 
 @router.get("/recordings.html", response_class=HTMLResponse)
