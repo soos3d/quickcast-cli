@@ -48,10 +48,9 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
+          # Only Phase 0 API tests: test_db*.py import recorder → cv2 (full stack)
           pytest \
             tests/test_api_characterization.py \
             tests/test_auth.py \
             tests/test_config_security.py \
-            tests/test_db.py \
-            tests/test_db_connection.py \
             -m "not slow and not requires_mediamtx"
