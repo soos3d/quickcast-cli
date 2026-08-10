@@ -1,12 +1,24 @@
-"""Configuration management for video-feed."""
+"""Configuration: MediaMTX helpers + pydantic-settings SpectraXSettings."""
+
+from __future__ import annotations
 
 import os
-import yaml
+import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
+
 import typer
+import yaml
+from pydantic import BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from .constants import DEFAULT_PATHS
+from .paths import default_config_path
+
+
+# ---------------------------------------------------------------------------
+# MediaMTX config generation (unchanged behavior)
+# ---------------------------------------------------------------------------
 
 
 def create_config(
@@ -14,28 +26,17 @@ def create_config(
     paths: List[str],
     creds: Dict[str, str],
     tls_key: Optional[str] = None,
-    tls_cert: Optional[str] = None
+    tls_cert: Optional[str] = None,
 ) -> Dict:
     """Create a MediaMTX configuration dictionary with optional TLS."""
-    # Create paths configuration
-    paths_config = {}
-    for path in paths:
-        paths_config[path] = {
-            "source": creds["publish_user"]
-        }
-    
-    # Create publisher permissions
-    publisher_permissions = []
-    for path in paths:
-        publisher_permissions.append({"action": "publish", "path": path})
-    
-    # Create viewer permissions
+    paths_config = {path: {"source": creds["publish_user"]} for path in paths}
+    publisher_permissions = [{"action": "publish", "path": path} for path in paths]
     viewer_permissions = []
     for path in paths:
         viewer_permissions.append({"action": "read", "path": path})
         viewer_permissions.append({"action": "playback", "path": path})
-    
-    config = {
+
+    config: Dict[str, Any] = {
         "paths": paths_config,
         "rtspAddress": f"{bind_ip}:8554",
         "rtsp": True,
@@ -46,19 +47,18 @@ def create_config(
                 "user": creds["publish_user"],
                 "pass": creds["publish_pass"],
                 "ips": [],
-                "permissions": publisher_permissions
+                "permissions": publisher_permissions,
             },
             {
                 "user": creds["read_user"],
                 "pass": creds["read_pass"],
                 "ips": [],
-                "permissions": viewer_permissions
-            }
+                "permissions": viewer_permissions,
+            },
         ],
     }
 
     if tls_key and tls_cert:
-        # Phase 0: strict RTSPS only — clients must use rtsps://:8322
         config["rtspEncryption"] = "strict"
         config["rtspServerKey"] = tls_key
         config["rtspServerCert"] = tls_cert
@@ -66,217 +66,308 @@ def create_config(
     return config
 
 
-def write_cfg(cfg_path: Path, bind_ip: str, paths: List[str], creds: Dict[str, str], 
-             tls_key: Optional[str] = None, tls_cert: Optional[str] = None) -> None:
+def write_cfg(
+    cfg_path: Path,
+    bind_ip: str,
+    paths: List[str],
+    creds: Dict[str, str],
+    tls_key: Optional[str] = None,
+    tls_cert: Optional[str] = None,
+) -> None:
     """Generate mediamtx.yml at cfg_path."""
     config = create_config(bind_ip, paths, creds, tls_key, tls_cert)
-    
-    yaml_text = yaml.safe_dump(config)
-    cfg_path.write_text(yaml_text)
+    cfg_path.write_text(yaml.safe_dump(config), encoding="utf-8")
     os.chmod(cfg_path, 0o600)
 
 
 def load_config_paths(config_path: Path) -> List[str]:
-    """Load paths from an existing mediamtx.yml file.
-    
-    Args:
-        config_path: Path to existing mediamtx.yml file
-        
-    Returns:
-        List of RTSP path strings
-        
-    Raises:
-        typer.Exit: If paths cannot be loaded
-    """
+    """Load path names from an existing mediamtx.yml file."""
     try:
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
-            
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
         paths_config = config.get("paths", {})
         if not paths_config:
             typer.secho("No paths found in configuration", fg=typer.colors.RED)
             raise typer.Exit(1)
-            
         return list(paths_config.keys())
+    except typer.Exit:
+        raise
     except Exception as e:
         typer.secho(f"Failed to load paths: {e}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
+
+
+# ---------------------------------------------------------------------------
+# pydantic-settings model
+# ---------------------------------------------------------------------------
+
+
+def _empty_list_to_none(v: Any) -> Any:
+    """Treat [] as None ("all") for class-filter fields."""
+    if v is None:
+        return None
+    if isinstance(v, list) and len(v) == 0:
+        return None
+    return v
+
+
+class NetworkConfig(BaseModel):
+    bind: str = "127.0.0.1"
+
+
+class DetectionResolution(BaseModel):
+    width: int = 960
+    height: int = 540
+
+
+class DetectionStreamConfig(BaseModel):
+    buffer_size: int = 10
+    reconnect_interval: int = 5
+
+
+class DetectionFilters(BaseModel):
+    classes: Optional[List[str]] = None
+    min_area: Optional[int] = None
+    max_area: Optional[int] = None
+
+    @field_validator("classes", mode="before")
+    @classmethod
+    def classes_empty_to_none(cls, v: Any) -> Any:
+        return _empty_list_to_none(v)
+
+
+class DetectionTrackingConfig(BaseModel):
+    enabled: bool = True
+    track_thresh: float = 0.25
+    track_buffer: int = 30
+    match_thresh: float = 0.8
+    frame_rate: int = 30
+
+
+class DetectionConfig(BaseModel):
+    enabled: bool = True
+    port: int = 8080
+    model: str = "yolov8n.pt"
+    confidence: float = Field(default=0.4, ge=0.0, le=1.0)
+    resolution: DetectionResolution = Field(default_factory=DetectionResolution)
+    stream: DetectionStreamConfig = Field(default_factory=DetectionStreamConfig)
+    filters: DetectionFilters = Field(default_factory=DetectionFilters)
+    tracking: DetectionTrackingConfig = Field(default_factory=DetectionTrackingConfig)
+
+
+class AppearanceBox(BaseModel):
+    thickness: int = 2
+    color: str = "green"
+
+
+class AppearanceLabel(BaseModel):
+    text_scale: float = 0.5
+    text_thickness: int = 1
+    text_padding: int = 10
+    position: str = "top_left"
+    border_radius: int = 0
+
+
+class AppearanceConfig(BaseModel):
+    box: AppearanceBox = Field(default_factory=AppearanceBox)
+    label: AppearanceLabel = Field(default_factory=AppearanceLabel)
+
+
+class RecordingConfig(BaseModel):
+    enabled: bool = True
+    min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    pre_buffer_seconds: int = 10
+    post_buffer_seconds: int = 10
+    max_storage_gb: float = 10.0
+    recordings_dir: str = "~/video-feed-recordings"
+    record_objects: Optional[List[str]] = None
+    codec: str = "avc1"
+
+    @field_validator("record_objects", mode="before")
+    @classmethod
+    def record_objects_empty_to_none(cls, v: Any) -> Any:
+        return _empty_list_to_none(v)
+
+    def expanded_recordings_dir(self) -> str:
+        return os.path.expanduser(self.recordings_dir)
+
+
+class SecurityConfig(BaseModel):
+    use_tls: bool = True
+    tls_key: str = ""
+    tls_cert: str = ""
+
+
+class MediamtxConfig(BaseModel):
+    """Process ownership for MediaMTX."""
+
+    managed: bool = True  # True: lifespan/CLI spawns child; False: external unit
+
+
+class SpectraXSettings(BaseSettings):
+    """Validated application settings (YAML + SPECTRAX_* env overrides)."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="SPECTRAX_",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
+    cameras: List[str] = Field(default_factory=lambda: list(DEFAULT_PATHS))
+    network: NetworkConfig = Field(default_factory=NetworkConfig)
+    detection: DetectionConfig = Field(default_factory=DetectionConfig)
+    appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
+    recording: RecordingConfig = Field(default_factory=RecordingConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    mediamtx: MediamtxConfig = Field(default_factory=MediamtxConfig)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # First source wins: env overrides YAML/init kwargs.
+        return env_settings, init_settings, dotenv_settings, file_secret_settings
+
+
+def load_settings(path: Path | None = None) -> SpectraXSettings:
+    """Load settings from YAML (optional) with env overrides.
+
+    Args:
+        path: Config file path. ``None`` uses defaults only (+ env).
+              Explicit missing path raises ``FileNotFoundError``.
+    """
+    data: Dict[str, Any] = {}
+    if path is not None:
+        path = Path(path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Config file not found: {path}")
+        with open(path, encoding="utf-8") as f:
+            loaded = yaml.safe_load(f) or {}
+        if not isinstance(loaded, dict):
+            raise ValueError(f"Config root must be a mapping: {path}")
+        data = loaded
+    return SpectraXSettings(**data)
+
+
+def load_settings_or_default(path: Path | None = None) -> SpectraXSettings:
+    """Load settings; if path is None, try default_config_path() when present."""
+    if path is not None:
+        return load_settings(path)
+    default = default_config_path()
+    if default.is_file():
+        return load_settings(default)
+    return load_settings(None)
+
+
+# ---------------------------------------------------------------------------
+# Legacy adapter (deprecated — delete after CLI fully on SpectraXSettings)
+# ---------------------------------------------------------------------------
 
 
 class SurveillanceConfig:
-    """Unified configuration management for surveillance system."""
-    
+    """Deprecated adapter over SpectraXSettings for pre-Phase-2 callers."""
+
     def __init__(self, config_file: Optional[Path] = None):
-        """Initialize configuration.
-        
-        Args:
-            config_file: Path to YAML configuration file
-        """
+        warnings.warn(
+            "SurveillanceConfig is deprecated; use load_settings() / SpectraXSettings",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.config_file = config_file
-        self.config_data = {}
-        
-        if config_file and config_file.exists():
-            self.load_from_file(config_file)
-        else:
-            self.load_defaults()
-    
-    def load_from_file(self, config_file: Path):
-        """Load configuration from YAML file.
-        
-        Args:
-            config_file: Path to YAML configuration file
-        """
         try:
-            with open(config_file, 'r') as f:
-                self.config_data = yaml.safe_load(f) or {}
+            if config_file is not None and Path(config_file).is_file():
+                self.settings = load_settings(Path(config_file))
+            elif config_file is None:
+                self.settings = load_settings(None)
+            else:
+                # Missing explicit path: fall back to defaults (old behavior)
+                self.settings = load_settings(None)
         except Exception as e:
             typer.secho(f"Error loading configuration: {e}", fg=typer.colors.RED)
-            raise typer.Exit(1)
-    
-    def load_defaults(self):
-        """Load default configuration values."""
-        self.config_data = {
-            'cameras': DEFAULT_PATHS,
-            'network': {
-                'bind': '127.0.0.1',
-                # api_port removed: unauthenticated /paths side-server deleted (Phase 0)
-            },
-            'detection': {
-                'enabled': True,
-                'port': 8080,
-                'model': 'yolov8n.pt',
-                'confidence': 0.4,
-                'resolution': {
-                    'width': 960,
-                    'height': 540
-                }
-            },
-            'security': {
-                'use_tls': True,
-                'tls_key': '',
-                'tls_cert': ''
-            },
-            'recording': {
-                'enabled': True,
-                'min_confidence': 0.5,
-                'pre_buffer_seconds': 10,
-                'post_buffer_seconds': 10,
-                'max_storage_gb': 10.0,
-                'recordings_dir': '~/video-feed-recordings',
-                'record_objects': [],
-                'codec': 'avc1'
-            }
-        }
-    
+            raise typer.Exit(1) from e
+        self.config_data = self.settings.model_dump()
+
+    def load_from_file(self, config_file: Path) -> None:
+        self.settings = load_settings(Path(config_file))
+        self.config_data = self.settings.model_dump()
+        self.config_file = config_file
+
+    def load_defaults(self) -> None:
+        self.settings = load_settings(None)
+        self.config_data = self.settings.model_dump()
+
     def get_cameras(self) -> List[str]:
-        """Get camera stream paths."""
-        return self.config_data.get('cameras', DEFAULT_PATHS)
-    
+        return list(self.settings.cameras)
+
     def get_network_config(self) -> Dict[str, Any]:
-        """Get network configuration."""
-        return self.config_data.get('network', {})
-    
+        return self.settings.network.model_dump()
+
     def get_detection_config(self) -> Dict[str, Any]:
-        """Get detection configuration."""
-        return self.config_data.get('detection', {})
-    
+        return self.settings.detection.model_dump()
+
     def get_security_config(self) -> Dict[str, Any]:
-        """Get security configuration."""
-        return self.config_data.get('security', {})
-    
+        return self.settings.security.model_dump()
+
     def get_recording_config(self) -> Dict[str, Any]:
-        """Get recording configuration."""
-        return self.config_data.get('recording', {})
-    
+        return self.settings.recording.model_dump()
+
     def get_bind_address(self) -> str:
-        """Get bind address (default loopback until explicitly opened)."""
-        return self.get_network_config().get('bind', '127.0.0.1')
-    
+        return self.settings.network.bind
+
     def get_api_port(self) -> Optional[int]:
-        """Legacy paths API port — always None after Phase 0 removal of /paths."""
-        return self.get_network_config().get('api_port')
-    
+        return None
+
     def is_detection_enabled(self) -> bool:
-        """Check if detection is enabled."""
-        return self.get_detection_config().get('enabled', True)
-    
+        return self.settings.detection.enabled
+
     def get_detection_port(self) -> int:
-        """Get detection port."""
-        return self.get_detection_config().get('port', 8080)
-    
+        return self.settings.detection.port
+
     def get_detection_model(self) -> str:
-        """Get detection model."""
-        return self.get_detection_config().get('model', 'yolov8n.pt')
-    
+        return self.settings.detection.model
+
     def get_detection_confidence(self) -> float:
-        """Get detection confidence."""
-        return self.get_detection_config().get('confidence', 0.4)
-    
+        return self.settings.detection.confidence
+
     def get_detection_resolution(self) -> tuple:
-        """Get detection resolution."""
-        res = self.get_detection_config().get('resolution', {})
-        return (res.get('width', 960), res.get('height', 540))
-    
-    def get_tls_config(self) -> tuple:
-        """Get TLS configuration.
-        
-        Returns:
-            Tuple of (tls_key_path, tls_cert_path) or (None, None)
-        """
-        security = self.get_security_config()
-        if not security.get('use_tls', False):
+        r = self.settings.detection.resolution
+        return (r.width, r.height)
+
+    def get_tls_config(self) -> Tuple[Optional[Path], Optional[Path]]:
+        sec = self.settings.security
+        if not sec.use_tls:
             return None, None
-            
-        tls_key = security.get('tls_key', '')
-        tls_cert = security.get('tls_cert', '')
-        
-        if tls_key and tls_cert:
-            return Path(tls_key), Path(tls_cert)
-        
+        if sec.tls_key and sec.tls_cert:
+            return Path(sec.tls_key), Path(sec.tls_cert)
         return None, None
-    
+
     def is_recording_enabled(self) -> bool:
-        """Check if recording is enabled."""
-        return self.get_recording_config().get('enabled', True)
-    
+        return self.settings.recording.enabled
+
     def get_recording_min_confidence(self) -> float:
-        """Get minimum confidence for recording."""
-        return self.get_recording_config().get('min_confidence', 0.5)
-    
+        return self.settings.recording.min_confidence
+
     def get_recording_pre_buffer(self) -> int:
-        """Get pre-detection buffer seconds."""
-        return self.get_recording_config().get('pre_buffer_seconds', 10)
-    
+        return self.settings.recording.pre_buffer_seconds
+
     def get_recording_post_buffer(self) -> int:
-        """Get post-detection buffer seconds."""
-        return self.get_recording_config().get('post_buffer_seconds', 10)
-    
+        return self.settings.recording.post_buffer_seconds
+
     def get_recording_max_storage(self) -> float:
-        """Get maximum storage in GB."""
-        return self.get_recording_config().get('max_storage_gb', 10.0)
-    
+        return self.settings.recording.max_storage_gb
+
     def get_recordings_directory(self) -> str:
-        """Get recordings directory.
-        
-        Returns:
-            str: Path to recordings directory, with ~ expanded to user's home directory
-        """
-        path = self.get_recording_config().get('recordings_dir', '~/video-feed-recordings')
-        # Ensure the path is expanded
-        return os.path.expanduser(path)
-    
+        return self.settings.recording.expanded_recordings_dir()
+
     def get_record_objects(self) -> list:
-        """Get list of objects to record.
-        
-        Returns:
-            List of object classes to record. Empty list means record all objects.
-        """
-        return self.get_recording_config().get('record_objects', [])
-    
+        """Empty list means record all (legacy). Settings None → []."""
+        objs = self.settings.recording.record_objects
+        return list(objs) if objs is not None else []
+
     def get_recording_codec(self) -> str:
-        """Get video codec for recordings.
-        
-        Returns:
-            str: Video codec (e.g., 'avc1' for H.264, 'mp4v' for MPEG-4)
-        """
-        return self.get_recording_config().get('codec', 'avc1')
+        return self.settings.recording.codec

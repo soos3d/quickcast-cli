@@ -1,8 +1,6 @@
 """Credential management for stream (MediaMTX) and API (dashboard) secrets.
 
-Stream publisher/viewer passwords and API admin/API-key material all live in the
-OS keychain under KEYCHAIN_SERVICE. They are never mixed: stream secrets must
-not be used for API login.
+Backed by :mod:`spectrax.secrets` stores. Tests use :func:`use_memory_store`.
 """
 
 from __future__ import annotations
@@ -13,68 +11,70 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import keyring
-
-from .constants import KEYCHAIN_SERVICE
-
-# Keyring labels
-LABEL_PUBLISHER = "publisher"
-LABEL_VIEWER = "viewer"
-LABEL_ADMIN_HASH = "admin_password_hash"
-LABEL_SESSION_KEY = "session_signing_key"
-LABEL_API_KEYS = "api_keys"
-
-# All labels wiped by reset
-ALL_SECRET_LABELS = (
-    LABEL_PUBLISHER,
-    LABEL_VIEWER,
+from .secrets import (
     LABEL_ADMIN_HASH,
-    LABEL_SESSION_KEY,
     LABEL_API_KEYS,
+    LABEL_PUBLISHER,
+    LABEL_SESSION_KEY,
+    LABEL_VIEWER,
+    KNOWN_LABELS,
+    MemorySecretsStore,
+    SecretsStore,
+    select_secrets_store,
 )
 
-# In-memory store for tests (when set, keyring is bypassed)
-_memory_store: Optional[Dict[str, str]] = None
+ALL_SECRET_LABELS = KNOWN_LABELS
+
+# Process-wide default store (tests override via use_memory_store)
+_store: Optional[SecretsStore] = None
+_memory_mode: bool = False
+
+
+def get_store() -> SecretsStore:
+    """Return the active secrets store (lazy-selected)."""
+    global _store
+    if _store is None:
+        _store = select_secrets_store("memory" if _memory_mode else None)
+    return _store
+
+
+def set_store(store: SecretsStore) -> None:
+    """Install a process-wide secrets store (tests / app factory)."""
+    global _store, _memory_mode
+    _store = store
+    _memory_mode = isinstance(store, MemorySecretsStore)
 
 
 def use_memory_store(enabled: bool = True) -> Dict[str, str]:
-    """Enable an in-memory secrets backend for tests. Returns the store dict."""
-    global _memory_store
+    """Enable an in-memory secrets backend for tests. Returns the backing dict."""
+    global _store, _memory_mode
     if enabled:
-        if _memory_store is None:
-            _memory_store = {}
-        return _memory_store
-    _memory_store = None
+        mem = MemorySecretsStore()
+        _store = mem
+        _memory_mode = True
+        return mem._data
+    _store = None
+    _memory_mode = False
     return {}
 
 
 def reset_memory_store() -> None:
     """Clear and disable the in-memory store."""
-    global _memory_store
-    _memory_store = None
+    global _store, _memory_mode
+    _store = None
+    _memory_mode = False
 
 
 def _get_password(label: str) -> Optional[str]:
-    if _memory_store is not None:
-        return _memory_store.get(label)
-    return keyring.get_password(KEYCHAIN_SERVICE, label)
+    return get_store().get(label)
 
 
 def _set_password(label: str, value: str) -> None:
-    if _memory_store is not None:
-        _memory_store[label] = value
-        return
-    keyring.set_password(KEYCHAIN_SERVICE, label, value)
+    get_store().set(label, value)
 
 
 def _delete_password(label: str) -> None:
-    if _memory_store is not None:
-        _memory_store.pop(label, None)
-        return
-    try:
-        keyring.delete_password(KEYCHAIN_SERVICE, label)
-    except keyring.errors.PasswordDeleteError:
-        pass
+    get_store().delete(label)
 
 
 def rand_secret() -> str:
@@ -83,7 +83,7 @@ def rand_secret() -> str:
 
 
 def get_secret(label: str) -> str:
-    """Fetch or generate a secret stored in the OS keychain."""
+    """Fetch or generate a secret stored in the active store."""
     secret = _get_password(label)
     if not secret:
         secret = rand_secret()
@@ -107,10 +107,6 @@ def reset_creds() -> None:
         _delete_password(label)
 
 
-# ---------------------------------------------------------------------------
-# Session signing key
-# ---------------------------------------------------------------------------
-
 def get_or_create_session_signing_key() -> str:
     """Return the session cookie signing key, generating once if missing."""
     existing = _get_password(LABEL_SESSION_KEY)
@@ -120,10 +116,6 @@ def get_or_create_session_signing_key() -> str:
     _set_password(LABEL_SESSION_KEY, key)
     return key
 
-
-# ---------------------------------------------------------------------------
-# Admin password (argon2 hash)
-# ---------------------------------------------------------------------------
 
 def hash_password(password: str) -> str:
     """Hash a password with argon2."""
@@ -135,7 +127,7 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     """Verify password against argon2 hash. Never raises for bad password."""
     from argon2 import PasswordHasher
-    from argon2.exceptions import VerifyMismatchError, InvalidHashError
+    from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
     try:
         return PasswordHasher().verify(password_hash, password)
@@ -162,10 +154,6 @@ def verify_admin_password(password: str) -> bool:
         return False
     return verify_password(password, stored)
 
-
-# ---------------------------------------------------------------------------
-# API keys
-# ---------------------------------------------------------------------------
 
 def _load_api_keys() -> List[Dict[str, Any]]:
     raw = _get_password(LABEL_API_KEYS)
@@ -229,25 +217,15 @@ def revoke_api_key(key_id: str) -> bool:
 
 
 def load_config_credentials(config_path) -> Dict[str, str]:
-    """Load credentials from an existing mediamtx.yml file.
-
-    Args:
-        config_path: Path to existing mediamtx.yml file
-
-    Returns:
-        Dictionary of credentials
-
-    Raises:
-        typer.Exit: If configuration cannot be loaded
-    """
-    import yaml
+    """Load credentials from an existing mediamtx.yml file."""
     import typer
+    import yaml
 
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
-        creds = {}
+        creds: Dict[str, str] = {}
         if "authInternalUsers" in config:
             for user_info in config["authInternalUsers"]:
                 if user_info.get("permissions"):

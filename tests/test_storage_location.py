@@ -14,7 +14,7 @@ logger = logging.getLogger('storage-test')
 
 # Import relevant modules
 from spectrax.recorder import RecordingManager
-from spectrax.api import RecordingsAPI
+from spectrax.recording.db import RecordingsAPI
 from spectrax.config import SurveillanceConfig
 
 def test_path_expansion():

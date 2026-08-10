@@ -1,0 +1,15 @@
+[Unit]
+Description=MediaMTX RTSP/HLS media server
+After=network.target
+
+[Service]
+Type=simple
+User=spectrax
+Group=spectrax
+# Generate once with: spectrax doctor --write-mediamtx-config (or copy from core)
+ExecStart=/usr/local/bin/mediamtx /etc/spectrax/mediamtx.yml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

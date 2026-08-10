@@ -13,7 +13,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-        # macOS matrix deferred (see docs/PLAN.md)
 
     steps:
       - uses: actions/checkout@v4
@@ -28,17 +27,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[web-test,dev]"
 
-      - name: Ruff (Phase 1 paths — correctness rules)
+      - name: Ruff (Phase 2 paths — correctness rules)
         run: |
-          # Full style cleanup deferred (repo predates ruff); gate on bugs only
-          ruff check --select E,F,B \
+          ruff check --select E,F,B --ignore B008 \
             src/spectrax/auth_gate.py \
             src/spectrax/credentials.py \
+            src/spectrax/config.py \
+            src/spectrax/secrets.py \
             src/spectrax/paths.py \
+            src/spectrax/app.py \
+            src/spectrax/api/deps.py \
             src/spectrax/routes/auth.py \
+            src/spectrax/routes/files.py \
+            src/spectrax/routes/recordings.py \
+            src/spectrax/routes/video.py \
             tests/test_api_characterization.py \
             tests/test_auth.py \
             tests/test_config_security.py \
+            tests/test_config_model.py \
+            tests/test_secrets_store.py \
+            tests/test_app_factory.py \
             tests/test_package_layout.py \
             tests/conftest.py
 
@@ -48,5 +56,8 @@ jobs:
             tests/test_api_characterization.py \
             tests/test_auth.py \
             tests/test_config_security.py \
+            tests/test_config_model.py \
+            tests/test_secrets_store.py \
+            tests/test_app_factory.py \
             tests/test_package_layout.py \
             -m "not slow and not requires_mediamtx"

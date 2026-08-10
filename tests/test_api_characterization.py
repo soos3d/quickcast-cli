@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import create_test_app, _reset_route_globals
-from spectrax.api import RecordingsAPI
+from spectrax.recording.db import RecordingsAPI
 
 
 pytestmark = pytest.mark.api
@@ -109,12 +109,12 @@ def test_pages_render(client_with_files):
 
 def test_error_body_has_no_path_leak(client_with_files, monkeypatch, test_recordings_dir):
     """Forced failure must not return absolute paths or exception strings."""
-    import spectrax.routes.recordings as rec
+    from spectrax.recording.db import RecordingsAPI
 
-    def boom(**kwargs):
+    def boom(self, **kwargs):
         raise RuntimeError(f"sqlite failed at {test_recordings_dir}/secret.db")
 
-    monkeypatch.setattr(rec.recordings_api, "get_recordings", boom)
+    monkeypatch.setattr(RecordingsAPI, "get_recordings", boom)
     r = client_with_files.get("/api/recordings")
     assert r.status_code == 500
     body = r.text
