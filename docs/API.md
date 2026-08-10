@@ -544,7 +544,7 @@ Currently, there are no rate limits on API endpoints. For production deployments
 
 ## CORS
 
-Cross-Origin Resource Sharing (CORS) is enabled by default for all origins. To restrict access, modify the FastAPI CORS middleware configuration in `videofeed/visualizer.py`.
+Cross-Origin Resource Sharing (CORS) is enabled by default for all origins. To restrict access, modify the FastAPI CORS middleware configuration in `spectrax/visualizer.py`.
 
 ---
 

@@ -12,7 +12,7 @@ server.key
 mediamtx.yml
 
 # YOLO Models (large files)
-video-feed/models/*.pt
+models/*.pt
 *.pt
 # Distribution / packaging
 .Python
